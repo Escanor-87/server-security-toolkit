@@ -1,0 +1,8 @@
+logs/
+keys/id_*
+keys/*.pem
+keys/*.key
+*.backup.*
+.DS_Store
+*.log
+
