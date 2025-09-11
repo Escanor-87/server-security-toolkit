@@ -1,8 +1,14 @@
+# Логи и временные файлы
 logs/
+*.log
+*.backup.*
+
+# SSH ключи (безопасность)
 keys/id_*
 keys/*.pem
 keys/*.key
-*.backup.*
-.DS_Store
-*.log
+keys/server_security_key*
 
+# Системные файлы
+.DS_Store
+*.tmp
