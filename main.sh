@@ -778,7 +778,7 @@ show_security_summary() {
 # Главная функция
 main() {
     log_info "🚀 Запуск Server Security Toolkit v$VERSION"
-{{ ... }}
+    log_info "Скрипт запущен из: ${BASH_SOURCE[0]}"
     if [[ -L "${BASH_SOURCE[0]}" ]]; then
         log_info "Символическая ссылка указывает на: $(readlink -f "${BASH_SOURCE[0]}")"
     fi

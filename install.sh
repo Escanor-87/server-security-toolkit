@@ -166,7 +166,6 @@ case "${1:-help}" in
         echo "════════════════════════════════════════"
         
         # Получаем список jail'ов
-        local jails
         jails=$(fail2ban-client status 2>/dev/null | grep "Jail list:" | sed 's/.*Jail list://' | tr ',' ' ')
         
         if [[ -z "$jails" ]]; then
@@ -174,22 +173,21 @@ case "${1:-help}" in
             exit 0
         fi
         
-        local total_banned=0
+        total_banned=0
         for jail in $jails; do
             jail=$(echo "$jail" | xargs)  # trim whitespace
             if [[ -n "$jail" ]]; then
-                local jail_status
                 jail_status=$(fail2ban-client status "$jail" 2>/dev/null)
-                local banned_count
                 banned_count=$(echo "$jail_status" | grep "Currently banned:" | awk '{print $3}')
-                local banned_ips
                 banned_ips=$(echo "$jail_status" | grep "Banned IP list:" | sed 's/.*Banned IP list://')
                 
                 echo "📋 Jail: $jail"
                 echo "   Заблокировано: ${banned_count:-0} IP"
                 if [[ -n "$banned_ips" && "$banned_ips" != " " ]]; then
                     echo "   IP адреса: $banned_ips"
-                    total_banned=$((total_banned + ${banned_count:-0}))
+                    if [[ "$banned_count" =~ ^[0-9]+$ ]]; then
+                        total_banned=$((total_banned + banned_count))
+                    fi
                 fi
                 echo
             fi
