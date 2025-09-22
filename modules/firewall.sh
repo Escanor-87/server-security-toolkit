@@ -130,7 +130,11 @@ add_firewall_rule() {
         2) protocol="udp" ;;
         3) protocol="" ;;
         0) return 0 ;;
-        *) log_error "Неверный выбор"; return 1 ;;
+        *) 
+            log_error "Неверный выбор: '$proto_choice'"
+            sleep 2
+            return 1
+            ;;
     esac
     
     local comment

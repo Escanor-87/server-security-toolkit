@@ -303,23 +303,24 @@ generate_ssh_key() {
 
 # Импорт публичного ключа в authorized_keys
 install_public_key() {
-    clear
-    log_info "📥 Импорт публичного ключа в authorized_keys"
-    echo
-    local auth_dir="/root/.ssh"
-    local auth_file="$auth_dir/authorized_keys"
-    mkdir -p "$auth_dir"
-    chmod 700 "$auth_dir"
+    while true; do
+        clear
+        log_info "📥 Импорт публичного ключа в authorized_keys"
+        echo
+        local auth_dir="/root/.ssh"
+        local auth_file="$auth_dir/authorized_keys"
+        mkdir -p "$auth_dir"
+        chmod 700 "$auth_dir"
 
-    echo "Выберите источник ключа:"
-    echo "1. Вставить ключ вручную"
-    echo "2. Путь к файлу с ключом (.pub)"
-    echo "0. 🔙 Назад в SSH меню"
-    read -p "Выбор [0-2]: " -n 1 -r src_choice
-    echo
+        echo "Выберите источник ключа:"
+        echo "1. Вставить ключ вручную"
+        echo "2. Путь к файлу с ключом (.pub)"
+        echo "0. 🔙 Назад в SSH меню"
+        read -p "Выбор [0-2]: " -n 1 -r src_choice
+        echo
 
-    local pubkey
-    case "$src_choice" in
+        local pubkey
+        case "$src_choice" in
         1)
             while true; do
                 echo "Вставьте публичный ключ (начиная с ssh-rsa/ssh-ed25519) и нажмите Enter:"
@@ -368,21 +369,24 @@ install_public_key() {
             return 0
             ;;
         *)
-            log_error "Неверный выбор"
-            return 1
+            log_error "Неверный выбор: '$src_choice'"
+            sleep 2
+            continue
             ;;
-    esac
+        esac
 
-    touch "$auth_file"
-    chmod 600 "$auth_file"
+        touch "$auth_file"
+        chmod 600 "$auth_file"
 
-    if grep -Fxq "$pubkey" "$auth_file"; then
-        log_warning "Такой ключ уже присутствует в authorized_keys"
+        if grep -Fxq "$pubkey" "$auth_file"; then
+            log_warning "Такой ключ уже присутствует в authorized_keys"
+            return 0
+        fi
+
+        echo "$pubkey" >> "$auth_file"
+        log_success "Ключ добавлен в $auth_file"
         return 0
-    fi
-
-    echo "$pubkey" >> "$auth_file"
-    log_success "Ключ добавлен в $auth_file"
+    done
 }
 
 # Список ключей в authorized_keys

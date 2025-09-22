@@ -165,21 +165,79 @@ EOF
 # Показать статус безопасности
 show_security_status() {
     clear
-    log_info "📋 Статус безопасности системы"
-    echo "════════════════════════════════════════"
+    echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║       Статус безопасности системы    ║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+    echo
     
-    echo "Last Update: $(stat -c %y /var/lib/apt/lists/ 2>/dev/null | head -1 | cut -d' ' -f1 || echo "unknown")"
-    echo "fail2ban: $(systemctl is-active fail2ban 2>/dev/null || echo "not installed")"
-    echo "Automatic Updates: $(systemctl is-enabled unattended-upgrades 2>/dev/null || echo "not configured")"
-    echo "CrowdSec: $(systemctl is-active crowdsec 2>/dev/null || echo "not installed")"
-    echo "CrowdSec Bouncer: $(systemctl is-active crowdsec-firewall-bouncer 2>/dev/null || echo "not installed")"
+    # Последнее обновление
+    local last_update
+    last_update=$(stat -c %y /var/lib/apt/lists/ 2>/dev/null | head -1 | cut -d' ' -f1 || echo "unknown")
+    echo -e "📅 ${BLUE}Последнее обновление:${NC} $last_update"
     
-    if command -v fail2ban-client &>/dev/null; then
-        echo
-        echo "fail2ban jails:"
-        fail2ban-client status 2>/dev/null || echo "fail2ban не запущен"
+    # fail2ban статус
+    local fail2ban_status
+    fail2ban_status=$(systemctl is-active fail2ban 2>/dev/null || echo "not installed")
+    if [[ "$fail2ban_status" == "active" ]]; then
+        echo -e "🛡️  ${BLUE}fail2ban:${NC} ${GREEN}✅ активен${NC}"
+    elif [[ "$fail2ban_status" == "inactive" ]]; then
+        echo -e "🛡️  ${BLUE}fail2ban:${NC} ${YELLOW}⚠️ неактивен${NC}"
+    else
+        echo -e "🛡️  ${BLUE}fail2ban:${NC} ${RED}❌ не установлен${NC}"
     fi
     
+    # Автообновления
+    local auto_updates
+    auto_updates=$(systemctl is-enabled unattended-upgrades 2>/dev/null || echo "not configured")
+    if [[ "$auto_updates" == "enabled" ]]; then
+        echo -e "🔄 ${BLUE}Автообновления:${NC} ${GREEN}✅ включены${NC}"
+    else
+        echo -e "🔄 ${BLUE}Автообновления:${NC} ${RED}❌ не настроены${NC}"
+    fi
+    
+    # CrowdSec статус
+    local crowdsec_status
+    crowdsec_status=$(systemctl is-active crowdsec 2>/dev/null || echo "not installed")
+    if [[ "$crowdsec_status" == "active" ]]; then
+        echo -e "🧱 ${BLUE}CrowdSec:${NC} ${GREEN}✅ активен${NC}"
+    elif [[ "$crowdsec_status" == "inactive" ]]; then
+        echo -e "🧱 ${BLUE}CrowdSec:${NC} ${YELLOW}⚠️ неактивен${NC}"
+    else
+        echo -e "🧱 ${BLUE}CrowdSec:${NC} ${RED}❌ не установлен${NC}"
+    fi
+    
+    # CrowdSec Bouncer статус
+    local bouncer_status
+    bouncer_status=$(systemctl is-active crowdsec-firewall-bouncer 2>/dev/null || echo "not installed")
+    if [[ "$bouncer_status" == "active" ]]; then
+        echo -e "🚪 ${BLUE}CrowdSec Bouncer:${NC} ${GREEN}✅ активен${NC}"
+    elif [[ "$bouncer_status" == "inactive" ]]; then
+        echo -e "🚪 ${BLUE}CrowdSec Bouncer:${NC} ${YELLOW}⚠️ неактивен${NC}"
+    else
+        echo -e "🚪 ${BLUE}CrowdSec Bouncer:${NC} ${RED}❌ не установлен${NC}"
+    fi
+    
+    # fail2ban jails детали
+    if command -v fail2ban-client &>/dev/null && [[ "$fail2ban_status" == "active" ]]; then
+        echo
+        echo -e "${BLUE}🔒 fail2ban jails:${NC}"
+        echo "════════════════════════════════════════"
+        local jail_status
+        jail_status=$(fail2ban-client status 2>/dev/null)
+        if [[ -n "$jail_status" ]]; then
+            echo "$jail_status" | while IFS= read -r line; do
+                if [[ "$line" =~ "Jail list:" ]]; then
+                    echo -e "${GREEN}$line${NC}"
+                else
+                    echo "$line"
+                fi
+            done
+        else
+            echo -e "${YELLOW}⚠️ fail2ban запущен, но нет активных jails${NC}"
+        fi
+    fi
+    
+    echo
     echo "════════════════════════════════════════"
 }
 
