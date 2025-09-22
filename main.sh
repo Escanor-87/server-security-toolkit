@@ -349,6 +349,9 @@ full_security_setup_interactive() {
 main() {
     log_info "🚀 Запуск Server Security Toolkit v$VERSION"
     log_info "Скрипт запущен из: ${BASH_SOURCE[0]}"
+    if [[ -L "${BASH_SOURCE[0]}" ]]; then
+        log_info "Символическая ссылка указывает на: $(readlink -f "${BASH_SOURCE[0]}")"
+    fi
     log_info "Рабочая директория: $SCRIPT_DIR"
     log_info "Директория модулей: $MODULES_DIR"
     log_info "Файл логов: $LOG_FILE"
@@ -424,9 +427,12 @@ main() {
                 ;;
         esac
         
-        echo
-        echo -e "${YELLOW}Нажмите Enter для возврата в главное меню...${NC}"
-        read -r
+        # Подтверждение только для информационных пунктов
+        if [[ "$choice" == "5" || "$choice" == "6" ]]; then
+            echo
+            echo -e "${YELLOW}Нажмите Enter для возврата в главное меню...${NC}"
+            read -r
+        fi
     done
 }
 

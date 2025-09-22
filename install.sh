@@ -119,11 +119,24 @@ setup_permissions() {
     fi
     ln -s "$INSTALL_DIR/main.sh" "$SYMLINK_PATH"
     
-    # Проверяем, что символическая ссылка работает
+    # Создаем короткий алиас ss
+    local short_alias="/usr/local/bin/ss"
+    if [[ -L "$short_alias" ]] || [[ -f "$short_alias" ]]; then
+        rm "$short_alias"
+    fi
+    ln -s "$INSTALL_DIR/main.sh" "$short_alias"
+    
+    # Проверяем, что символические ссылки работают
     if [[ -L "$SYMLINK_PATH" ]] && [[ -f "$(readlink -f "$SYMLINK_PATH")" ]]; then
-        log_success "Символическая ссылка создана и проверена"
+        log_success "Символическая ссылка security-toolkit создана и проверена"
     else
-        log_warning "Проблема с символической ссылкой, используйте прямой путь"
+        log_warning "Проблема с символической ссылкой security-toolkit"
+    fi
+    
+    if [[ -L "$short_alias" ]] && [[ -f "$(readlink -f "$short_alias")" ]]; then
+        log_success "Короткий алиас ss создан и проверен"
+    else
+        log_warning "Проблема с алиасом ss"
     fi
     
     log_success "Права доступа настроены"
@@ -136,9 +149,10 @@ show_installation_info() {
     log_success "🎉 Server Security Toolkit успешно установлен!"
     echo
     echo "📍 Расположение: $INSTALL_DIR"
-    echo "🔗 Команда: security-toolkit (или $SYMLINK_PATH)"
+    echo "🔗 Команды: ss | security-toolkit"
     echo
     echo "🚀 Быстрый старт:"
+    echo "   sudo ss"
     echo "   sudo security-toolkit"
     echo
     echo "📋 Или перейдите в директорию:"
