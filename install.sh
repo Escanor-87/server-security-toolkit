@@ -157,16 +157,45 @@ create_fail2ban_aliases() {
 
 case "${1:-help}" in
     "list"|"l")
-        echo "🔒 Заблокированные IP адреса:"
+        if ! command -v fail2ban-client &>/dev/null; then
+            echo "❌ fail2ban не установлен"
+            exit 1
+        fi
+        
+        echo "🔒 Статус fail2ban и заблокированные IP:"
         echo "════════════════════════════════════════"
-        fail2ban-client status | grep "Jail list:" | sed 's/.*Jail list://' | tr ',' '\n' | while read -r jail; do
+        
+        # Получаем список jail'ов
+        local jails
+        jails=$(fail2ban-client status 2>/dev/null | grep "Jail list:" | sed 's/.*Jail list://' | tr ',' ' ')
+        
+        if [[ -z "$jails" ]]; then
+            echo "⚠️  Нет активных jail'ов"
+            exit 0
+        fi
+        
+        local total_banned=0
+        for jail in $jails; do
             jail=$(echo "$jail" | xargs)  # trim whitespace
             if [[ -n "$jail" ]]; then
+                local jail_status
+                jail_status=$(fail2ban-client status "$jail" 2>/dev/null)
+                local banned_count
+                banned_count=$(echo "$jail_status" | grep "Currently banned:" | awk '{print $3}')
+                local banned_ips
+                banned_ips=$(echo "$jail_status" | grep "Banned IP list:" | sed 's/.*Banned IP list://')
+                
                 echo "📋 Jail: $jail"
-                fail2ban-client status "$jail" 2>/dev/null | grep "Banned IP list:" | sed 's/.*Banned IP list:/   Banned IPs:/'
+                echo "   Заблокировано: ${banned_count:-0} IP"
+                if [[ -n "$banned_ips" && "$banned_ips" != " " ]]; then
+                    echo "   IP адреса: $banned_ips"
+                    total_banned=$((total_banned + ${banned_count:-0}))
+                fi
                 echo
             fi
         done
+        
+        echo "📊 Всего заблокировано IP: $total_banned"
         ;;
     "status"|"s")
         echo "📊 Статус fail2ban:"

@@ -722,16 +722,7 @@ remove_authorized_key() {
     chmod 600 /root/.ssh/authorized_keys
     
     log_success "Ключ удален успешно"
-    
-    echo
     log_info "💾 Бекап создан: $(basename "$backup_file")"
-    read -p "Хотите восстановить удаленный ключ? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        cp "$backup_file" /root/.ssh/authorized_keys
-        chmod 600 /root/.ssh/authorized_keys
-        log_success "Ключ восстановлен из бекапа"
-    fi
 }
 
 # Показать текущие настройки SSH
