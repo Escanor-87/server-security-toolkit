@@ -320,7 +320,7 @@ generate_ssh_key() {
             echo "  - $(basename "$key")"
         done
         echo
-        read -p "Перегенерировать ключи? (y/N): " -n 1 -r
+        read -p "Сгенерировать новые ключи? (y/N): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             log_info "Генерация отменена"
@@ -351,6 +351,10 @@ generate_ssh_key() {
         local auth_file="/root/.ssh/authorized_keys"
         local pubkey_content
         pubkey_content=$(cat "$key_path.pub")
+        
+        # Убеждаемся, что директория и файл существуют
+        mkdir -p "$(dirname "$auth_file")"
+        touch "$auth_file"
         
         if [[ -f "$auth_file" ]] && grep -Fxq "$pubkey_content" "$auth_file"; then
             log_info "Ключ уже присутствует в authorized_keys"

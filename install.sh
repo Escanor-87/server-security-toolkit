@@ -139,8 +139,88 @@ setup_permissions() {
         log_warning "Проблема с алиасом ss"
     fi
     
+    # Создаем алиасы для fail2ban
+    create_fail2ban_aliases
+    
     log_success "Права доступа настроены"
     log_info "Создана символическая ссылка: $SYMLINK_PATH"
+}
+
+# Создание алиасов для fail2ban
+create_fail2ban_aliases() {
+    log_info "Создание алиасов для fail2ban..."
+    
+    # Создаем скрипт-обертку для fail2ban
+    cat > /usr/local/bin/f2b << 'EOF'
+#!/bin/bash
+# fail2ban alias wrapper
+
+case "${1:-help}" in
+    "list"|"l")
+        echo "🔒 Заблокированные IP адреса:"
+        echo "════════════════════════════════════════"
+        fail2ban-client status | grep "Jail list:" | sed 's/.*Jail list://' | tr ',' '\n' | while read -r jail; do
+            jail=$(echo "$jail" | xargs)  # trim whitespace
+            if [[ -n "$jail" ]]; then
+                echo "📋 Jail: $jail"
+                fail2ban-client status "$jail" 2>/dev/null | grep "Banned IP list:" | sed 's/.*Banned IP list:/   Banned IPs:/'
+                echo
+            fi
+        done
+        ;;
+    "status"|"s")
+        echo "📊 Статус fail2ban:"
+        echo "════════════════════════════════════════"
+        fail2ban-client status
+        ;;
+    "unban"|"u")
+        if [[ -z "$2" ]]; then
+            echo "❌ Укажите IP для разблокировки: f2b unban <IP>"
+            exit 1
+        fi
+        echo "🔓 Разблокировка IP: $2"
+        fail2ban-client set sshd unbanip "$2"
+        ;;
+    "ban"|"b")
+        if [[ -z "$2" ]]; then
+            echo "❌ Укажите IP для блокировки: f2b ban <IP>"
+            exit 1
+        fi
+        echo "🔒 Блокировка IP: $2"
+        fail2ban-client set sshd banip "$2"
+        ;;
+    "reload"|"r")
+        echo "🔄 Перезагрузка fail2ban..."
+        systemctl reload fail2ban
+        echo "✅ fail2ban перезагружен"
+        ;;
+    "log"|"logs")
+        echo "📋 Последние логи fail2ban:"
+        echo "════════════════════════════════════════"
+        journalctl -u fail2ban -n 20 --no-pager
+        ;;
+    "help"|"h"|*)
+        echo "🛡️  fail2ban Quick Commands (f2b):"
+        echo "════════════════════════════════════════"
+        echo "f2b list     (l) - Показать заблокированные IP"
+        echo "f2b status   (s) - Статус fail2ban"
+        echo "f2b ban <IP> (b) - Заблокировать IP"
+        echo "f2b unban <IP> (u) - Разблокировать IP"
+        echo "f2b reload   (r) - Перезагрузить fail2ban"
+        echo "f2b log      - Показать логи"
+        echo "f2b help     (h) - Эта справка"
+        ;;
+esac
+EOF
+    
+    chmod +x /usr/local/bin/f2b
+    
+    if [[ -f /usr/local/bin/f2b ]]; then
+        log_success "Алиас f2b создан (fail2ban quick commands)"
+        log_info "Использование: f2b list, f2b status, f2b ban <IP>, f2b unban <IP>"
+    else
+        log_warning "Не удалось создать алиас f2b"
+    fi
 }
 
 # Показать информацию об установке
@@ -149,10 +229,12 @@ show_installation_info() {
     log_success "🎉 Server Security Toolkit успешно установлен!"
     echo
     echo "📍 Расположение: $INSTALL_DIR"
-    echo "🔗 Команды: ss | security-toolkit"
+    echo "🔗 Команды: ss | security-toolkit | f2b"
     echo
     echo "🚀 Быстрый старт:"
-    echo "   sudo ss"
+    echo "   sudo ss              # Security Toolkit"
+    echo "   f2b list             # fail2ban статус"
+    echo "   f2b help             # fail2ban команды"
     echo "   sudo security-toolkit"
     echo
     echo "📋 Или перейдите в директорию:"
