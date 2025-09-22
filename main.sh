@@ -220,15 +220,160 @@ show_system_info() {
 
 # Просмотр логов
 view_logs() {
-    show_header
-    if [[ -f "$LOG_FILE" ]]; then
-        log_info "Содержимое лога:"
-        echo "════════════════════════════════════════════════════"
-        cat "$LOG_FILE"
-        echo "════════════════════════════════════════════════════"
-    else
-        log_warning "Файл лога пуст или не найден"
-    fi
+    while true; do
+        clear
+        echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║            Просмотр логов            ║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+        echo
+        
+        # Статистика по логам
+        if [[ -f "$LOG_FILE" ]]; then
+            local total_lines success_count error_count warning_count info_count
+            total_lines=$(wc -l < "$LOG_FILE" 2>/dev/null || echo "0")
+            success_count=$(grep -c "\[SUCCESS\]" "$LOG_FILE" 2>/dev/null || echo "0")
+            error_count=$(grep -c "\[ERROR\]" "$LOG_FILE" 2>/dev/null || echo "0")
+            warning_count=$(grep -c "\[WARNING\]" "$LOG_FILE" 2>/dev/null || echo "0")
+            info_count=$(grep -c "\[INFO\]" "$LOG_FILE" 2>/dev/null || echo "0")
+            
+            echo -e "${GREEN}📊 Статистика логов:${NC}"
+            echo "════════════════════════════════════════════════════"
+            echo -e "📄 Всего записей: ${BLUE}$total_lines${NC}"
+            echo -e "✅ Успешных операций: ${GREEN}$success_count${NC}"
+            echo -e "❌ Ошибок: ${RED}$error_count${NC}"
+            echo -e "⚠️  Предупреждений: ${YELLOW}$warning_count${NC}"
+            echo -e "ℹ️  Информационных: ${BLUE}$info_count${NC}"
+            echo "════════════════════════════════════════════════════"
+            echo
+            
+            echo "Выберите действие:"
+            echo "1. 📋 Показать все логи"
+            echo "2. ✅ Показать только успешные операции"
+            echo "3. ❌ Показать только ошибки"
+            echo "4. ⚠️  Показать только предупреждения"
+            echo "5. 📊 Показать последние 20 записей"
+            echo "6. 🔍 Поиск в логах"
+            echo "7. 🗑️  Очистить логи"
+            echo "0. 🔙 Назад в главное меню"
+            echo
+            read -p "Выберите действие [0-7]: " -n 1 -r choice
+            echo
+            
+            case $choice in
+                1) 
+                    echo -e "${GREEN}📋 Все логи:${NC}"
+                    echo "════════════════════════════════════════════════════"
+                    cat "$LOG_FILE" | while IFS= read -r line; do
+                        if [[ "$line" =~ \[SUCCESS\] ]]; then
+                            echo -e "${GREEN}$line${NC}"
+                        elif [[ "$line" =~ \[ERROR\] ]]; then
+                            echo -e "${RED}$line${NC}"
+                        elif [[ "$line" =~ \[WARNING\] ]]; then
+                            echo -e "${YELLOW}$line${NC}"
+                        elif [[ "$line" =~ \[INFO\] ]]; then
+                            echo -e "${BLUE}$line${NC}"
+                        else
+                            echo "$line"
+                        fi
+                    done
+                    echo "════════════════════════════════════════════════════"
+                    ;;
+                2)
+                    echo -e "${GREEN}✅ Успешные операции:${NC}"
+                    echo "════════════════════════════════════════════════════"
+                    grep "\[SUCCESS\]" "$LOG_FILE" | while IFS= read -r line; do
+                        echo -e "${GREEN}$line${NC}"
+                    done
+                    echo "════════════════════════════════════════════════════"
+                    ;;
+                3)
+                    echo -e "${RED}❌ Ошибки:${NC}"
+                    echo "════════════════════════════════════════════════════"
+                    grep "\[ERROR\]" "$LOG_FILE" | while IFS= read -r line; do
+                        echo -e "${RED}$line${NC}"
+                    done
+                    echo "════════════════════════════════════════════════════"
+                    ;;
+                4)
+                    echo -e "${YELLOW}⚠️  Предупреждения:${NC}"
+                    echo "════════════════════════════════════════════════════"
+                    grep "\[WARNING\]" "$LOG_FILE" | while IFS= read -r line; do
+                        echo -e "${YELLOW}$line${NC}"
+                    done
+                    echo "════════════════════════════════════════════════════"
+                    ;;
+                5)
+                    echo -e "${BLUE}📊 Последние 20 записей:${NC}"
+                    echo "════════════════════════════════════════════════════"
+                    tail -20 "$LOG_FILE" | while IFS= read -r line; do
+                        if [[ "$line" =~ \[SUCCESS\] ]]; then
+                            echo -e "${GREEN}$line${NC}"
+                        elif [[ "$line" =~ \[ERROR\] ]]; then
+                            echo -e "${RED}$line${NC}"
+                        elif [[ "$line" =~ \[WARNING\] ]]; then
+                            echo -e "${YELLOW}$line${NC}"
+                        elif [[ "$line" =~ \[INFO\] ]]; then
+                            echo -e "${BLUE}$line${NC}"
+                        else
+                            echo "$line"
+                        fi
+                    done
+                    echo "════════════════════════════════════════════════════"
+                    ;;
+                6)
+                    read -p "Введите поисковый запрос: " -r search_term
+                    if [[ -n "$search_term" ]]; then
+                        echo -e "${BLUE}🔍 Результаты поиска для '$search_term':${NC}"
+                        echo "════════════════════════════════════════════════════"
+                        grep -i "$search_term" "$LOG_FILE" | while IFS= read -r line; do
+                            if [[ "$line" =~ \[SUCCESS\] ]]; then
+                                echo -e "${GREEN}$line${NC}"
+                            elif [[ "$line" =~ \[ERROR\] ]]; then
+                                echo -e "${RED}$line${NC}"
+                            elif [[ "$line" =~ \[WARNING\] ]]; then
+                                echo -e "${YELLOW}$line${NC}"
+                            elif [[ "$line" =~ \[INFO\] ]]; then
+                                echo -e "${BLUE}$line${NC}"
+                            else
+                                echo "$line"
+                            fi
+                        done
+                        echo "════════════════════════════════════════════════════"
+                    fi
+                    ;;
+                7)
+                    read -p "Очистить все логи? (y/N): " -n 1 -r
+                    echo
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        > "$LOG_FILE"
+                        log_success "Логи очищены"
+                    fi
+                    ;;
+                0) return 0 ;;
+                *)
+                    log_error "Неверный выбор: '$choice'"
+                    sleep 1
+                    continue
+                    ;;
+            esac
+        else
+            log_warning "📄 Файл лога пуст или не найден: $LOG_FILE"
+            echo
+            echo "1. 🔙 Назад в главное меню"
+            echo
+            read -p "Нажмите 1 для возврата: " -n 1 -r choice
+            echo
+            if [[ "$choice" == "1" ]]; then
+                return 0
+            fi
+            continue
+        fi
+        
+        if [[ "$choice" != "0" ]]; then
+            echo
+            read -p "Нажмите Enter для продолжения..." -r
+        fi
+    done
 }
 
 # Загрузка конфигурации по умолчанию

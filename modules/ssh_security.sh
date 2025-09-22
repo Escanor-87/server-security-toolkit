@@ -314,33 +314,64 @@ install_public_key() {
     echo "Выберите источник ключа:"
     echo "1. Вставить ключ вручную"
     echo "2. Путь к файлу с ключом (.pub)"
-    read -p "Выбор [1-2]: " -n 1 -r src_choice
+    echo "0. 🔙 Назад в SSH меню"
+    read -p "Выбор [0-2]: " -n 1 -r src_choice
     echo
 
     local pubkey
     case "$src_choice" in
         1)
-            echo "Вставьте публичный ключ (начиная с ssh-rsa/ssh-ed25519) и нажмите Enter:"
-            read -r pubkey
+            while true; do
+                echo "Вставьте публичный ключ (начиная с ssh-rsa/ssh-ed25519) и нажмите Enter:"
+                read -r pubkey
+                
+                if [[ -z "$pubkey" ]]; then
+                    log_warning "Ключ не может быть пустым. Попробуйте снова или нажмите Ctrl+C для отмены."
+                    continue
+                fi
+                
+                if [[ ! "$pubkey" =~ ^ssh- ]]; then
+                    log_error "Некорректный формат ключа. Ключ должен начинаться с ssh-rsa, ssh-ed25519 и т.д."
+                    echo "Попробуйте снова или нажмите Ctrl+C для отмены."
+                    continue
+                fi
+                
+                break
+            done
             ;;
         2)
-            read -p "Укажите путь к файлу публичного ключа: " -r key_path
-            if [[ ! -f "$key_path" ]]; then
-                log_error "Файл не найден: $key_path"
-                return 1
-            fi
-            pubkey=$(sed -n '1p' "$key_path")
+            while true; do
+                read -p "Укажите путь к файлу публичного ключа: " -r key_path
+                
+                if [[ -z "$key_path" ]]; then
+                    log_warning "Путь не может быть пустым. Попробуйте снова."
+                    continue
+                fi
+                
+                if [[ ! -f "$key_path" ]]; then
+                    log_error "Файл не найден: $key_path"
+                    echo "Попробуйте снова или нажмите Ctrl+C для отмены."
+                    continue
+                fi
+                
+                pubkey=$(sed -n '1p' "$key_path")
+                if [[ -z "$pubkey" ]] || [[ ! "$pubkey" =~ ^ssh- ]]; then
+                    log_error "Файл не содержит корректный SSH ключ"
+                    echo "Попробуйте снова или нажмите Ctrl+C для отмены."
+                    continue
+                fi
+                
+                break
+            done
+            ;;
+        0)
+            return 0
             ;;
         *)
             log_error "Неверный выбор"
             return 1
             ;;
     esac
-
-    if [[ -z "$pubkey" ]] || [[ ! "$pubkey" =~ ^ssh- ]]; then
-        log_error "Некорректный публичный ключ"
-        return 1
-    fi
 
     touch "$auth_file"
     chmod 600 "$auth_file"
@@ -391,7 +422,11 @@ manage_authorized_keys() {
         fi
         
         local key_count
-        key_count=$(grep -c "^ssh-" /root/.ssh/authorized_keys 2>/dev/null || echo "0")
+        if [[ -s /root/.ssh/authorized_keys ]]; then
+            key_count=$(grep -c "^ssh-" /root/.ssh/authorized_keys 2>/dev/null || echo "0")
+        else
+            key_count="0"
+        fi
         
         if [[ "$key_count" -eq 0 ]]; then
             log_warning "В authorized_keys нет SSH ключей"
@@ -659,6 +694,237 @@ restart_ssh() {
     fi
 }
 
+# Восстановление из резервной копии
+restore_from_backup() {
+    while true; do
+        clear
+        echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║      Восстановление из бекапа        ║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+        echo
+        
+        echo "Выберите тип восстановления:"
+        echo "1. 🔧 Восстановить SSH конфигурацию (/etc/ssh/sshd_config)"
+        echo "2. 🔑 Восстановить authorized_keys"
+        echo "3. 📋 Показать доступные резервные копии"
+        echo "0. 🔙 Назад в SSH меню"
+        echo
+        read -p "Выберите действие [0-3]: " -n 1 -r restore_choice
+        echo
+        
+        case $restore_choice in
+            1) restore_ssh_config ;;
+            2) restore_authorized_keys ;;
+            3) show_backup_files ;;
+            0) return 0 ;;
+            *)
+                log_error "Неверный выбор: '$restore_choice'"
+                sleep 1
+                continue
+                ;;
+        esac
+        
+        if [[ "$restore_choice" != "0" ]]; then
+            echo
+            read -p "Нажмите Enter для продолжения..." -r
+        fi
+    done
+}
+
+# Восстановление SSH конфигурации
+restore_ssh_config() {
+    clear
+    log_info "🔧 Восстановление SSH конфигурации"
+    echo
+    
+    # Ищем резервные копии SSH конфигурации
+    local backup_files
+    mapfile -t backup_files < <(find /etc/ssh -name "sshd_config.backup.*" 2>/dev/null | sort -r)
+    
+    if [[ ${#backup_files[@]} -eq 0 ]]; then
+        log_warning "Резервные копии SSH конфигурации не найдены"
+        return 0
+    fi
+    
+    echo "Найденные резервные копии SSH конфигурации:"
+    echo "════════════════════════════════════════════════════"
+    local i=1
+    for backup in "${backup_files[@]}"; do
+        local backup_date
+        backup_date=$(stat -c %y "$backup" 2>/dev/null | cut -d' ' -f1,2)
+        echo "$i. $(basename "$backup") (создан: $backup_date)"
+        ((i++))
+    done
+    echo "════════════════════════════════════════════════════"
+    echo
+    
+    read -p "Введите номер резервной копии для восстановления [1-$((i-1))] или 0 для отмены: " -r backup_num
+    
+    if [[ "$backup_num" == "0" ]]; then
+        log_info "Восстановление отменено"
+        return 0
+    fi
+    
+    if [[ ! "$backup_num" =~ ^[0-9]+$ ]] || [[ "$backup_num" -lt 1 ]] || [[ "$backup_num" -gt $((i-1)) ]]; then
+        log_error "Неверный номер резервной копии"
+        return 1
+    fi
+    
+    local selected_backup="${backup_files[$((backup_num-1))]}"
+    
+    echo
+    log_warning "⚠️  ВНИМАНИЕ: Это действие перезапишет текущую SSH конфигурацию!"
+    echo "Будет восстановлен файл: $(basename "$selected_backup")"
+    echo
+    read -p "Продолжить восстановление? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Восстановление отменено"
+        return 0
+    fi
+    
+    # Создаем резервную копию текущей конфигурации перед восстановлением
+    backup_ssh_config
+    
+    # Восстанавливаем из резервной копии
+    if cp "$selected_backup" "$SSH_CONFIG"; then
+        log_success "SSH конфигурация восстановлена из $(basename "$selected_backup")"
+        log_warning "⚠️  Необходимо перезапустить SSH службу для применения изменений!"
+        echo
+        read -p "Перезапустить SSH службу сейчас? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            restart_ssh
+        fi
+    else
+        log_error "Ошибка восстановления SSH конфигурации"
+        return 1
+    fi
+}
+
+# Восстановление authorized_keys
+restore_authorized_keys() {
+    clear
+    log_info "🔑 Восстановление authorized_keys"
+    echo
+    
+    # Ищем резервные копии authorized_keys
+    local backup_files
+    mapfile -t backup_files < <(find /root/.ssh -name "authorized_keys.backup.*" 2>/dev/null | sort -r)
+    
+    if [[ ${#backup_files[@]} -eq 0 ]]; then
+        log_warning "Резервные копии authorized_keys не найдены"
+        return 0
+    fi
+    
+    echo "Найденные резервные копии authorized_keys:"
+    echo "════════════════════════════════════════════════════"
+    local i=1
+    for backup in "${backup_files[@]}"; do
+        local backup_date key_count
+        backup_date=$(stat -c %y "$backup" 2>/dev/null | cut -d' ' -f1,2)
+        key_count=$(grep -c "^ssh-" "$backup" 2>/dev/null || echo "0")
+        echo "$i. $(basename "$backup") (создан: $backup_date, ключей: $key_count)"
+        ((i++))
+    done
+    echo "════════════════════════════════════════════════════"
+    echo
+    
+    read -p "Введите номер резервной копии для восстановления [1-$((i-1))] или 0 для отмены: " -r backup_num
+    
+    if [[ "$backup_num" == "0" ]]; then
+        log_info "Восстановление отменено"
+        return 0
+    fi
+    
+    if [[ ! "$backup_num" =~ ^[0-9]+$ ]] || [[ "$backup_num" -lt 1 ]] || [[ "$backup_num" -gt $((i-1)) ]]; then
+        log_error "Неверный номер резервной копии"
+        return 1
+    fi
+    
+    local selected_backup="${backup_files[$((backup_num-1))]}"
+    
+    echo
+    log_warning "⚠️  ВНИМАНИЕ: Это действие перезапишет текущий authorized_keys!"
+    echo "Будет восстановлен файл: $(basename "$selected_backup")"
+    echo
+    read -p "Продолжить восстановление? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Восстановление отменено"
+        return 0
+    fi
+    
+    # Создаем резервную копию текущего файла перед восстановлением
+    if [[ -f /root/.ssh/authorized_keys ]]; then
+        local current_backup
+        current_backup="/root/.ssh/authorized_keys.backup.$(date +%Y%m%d_%H%M%S)"
+        cp /root/.ssh/authorized_keys "$current_backup"
+        log_info "Текущий файл сохранен как: $(basename "$current_backup")"
+    fi
+    
+    # Восстанавливаем из резервной копии
+    if cp "$selected_backup" /root/.ssh/authorized_keys; then
+        chmod 600 /root/.ssh/authorized_keys
+        log_success "authorized_keys восстановлен из $(basename "$selected_backup")"
+    else
+        log_error "Ошибка восстановления authorized_keys"
+        return 1
+    fi
+}
+
+# Показать доступные резервные копии
+show_backup_files() {
+    clear
+    log_info "📋 Доступные резервные копии"
+    echo
+    
+    # SSH конфигурация
+    echo -e "${BLUE}🔧 SSH конфигурация (sshd_config):${NC}"
+    echo "════════════════════════════════════════════════════"
+    local ssh_backups
+    mapfile -t ssh_backups < <(find /etc/ssh -name "sshd_config.backup.*" 2>/dev/null | sort -r)
+    
+    if [[ ${#ssh_backups[@]} -eq 0 ]]; then
+        echo "Резервные копии не найдены"
+    else
+        for backup in "${ssh_backups[@]}"; do
+            local backup_date backup_size
+            backup_date=$(stat -c %y "$backup" 2>/dev/null | cut -d' ' -f1,2)
+            backup_size=$(stat -c %s "$backup" 2>/dev/null)
+            echo "📄 $(basename "$backup")"
+            echo "   Создан: $backup_date"
+            echo "   Размер: $backup_size байт"
+            echo
+        done
+    fi
+    
+    echo
+    # authorized_keys
+    echo -e "${BLUE}🔑 Authorized Keys:${NC}"
+    echo "════════════════════════════════════════════════════"
+    local key_backups
+    mapfile -t key_backups < <(find /root/.ssh -name "authorized_keys.backup.*" 2>/dev/null | sort -r)
+    
+    if [[ ${#key_backups[@]} -eq 0 ]]; then
+        echo "Резервные копии не найдены"
+    else
+        for backup in "${key_backups[@]}"; do
+            local backup_date backup_size key_count
+            backup_date=$(stat -c %y "$backup" 2>/dev/null | cut -d' ' -f1,2)
+            backup_size=$(stat -c %s "$backup" 2>/dev/null)
+            key_count=$(grep -c "^ssh-" "$backup" 2>/dev/null || echo "0")
+            echo "📄 $(basename "$backup")"
+            echo "   Создан: $backup_date"
+            echo "   Размер: $backup_size байт"
+            echo "   Ключей: $key_count"
+            echo
+        done
+    fi
+    
+    echo "════════════════════════════════════════════════════"
+}
+
 # Главное меню SSH модуля
 configure_ssh_security() {
     while true; do
@@ -675,6 +941,7 @@ configure_ssh_security() {
         echo "6. 🚫 Отключить root SSH вход"
         echo "7. 📜 Управление authorized_keys (просмотр/копирование/удаление)"
         echo "8. 🔄 Перезапустить SSH службу"
+        echo "9. 🔙 Восстановить из резервной копии"
         echo "0. ⬅️  Назад в главное меню"
         echo
         read -p "Выберите действие [0-9]: " -n 1 -r choice
@@ -689,6 +956,7 @@ configure_ssh_security() {
             6) disable_root_login ;;
             7) manage_authorized_keys ;;
             8) restart_ssh ;;
+            9) restore_from_backup ;;
             0) return 0 ;;
             *)
                 log_error "Неверный выбор: '$choice'"
