@@ -169,10 +169,10 @@ disable_root_login() {
     fi
 }
 
-# Генерация SSH ключей с автоматическим добавлением
-generate_and_install_ssh_key() {
+# Генерация SSH ключей с копированием в буфер
+generate_ssh_key() {
     clear
-    log_info "🔑 Генерация и установка SSH ключей"
+    log_info "🔑 Генерация SSH ключей"
     echo
     
     # Выбор типа ключа
@@ -222,35 +222,36 @@ generate_and_install_ssh_key() {
     if ssh-keygen $key_params -f "$key_file" -N "" -C "root@$(hostname)"; then
         log_success "Ключ сгенерирован: $key_file"
         
-        # Автоматически добавляем публичный ключ в authorized_keys
+        # Копируем публичный ключ в буфер обмена и показываем
         local pub_key_file="${key_file}.pub"
         if [[ -f "$pub_key_file" ]]; then
-            log_info "Автоматическое добавление ключа в authorized_keys..."
-            
-            # Создаем authorized_keys если не существует
-            touch /root/.ssh/authorized_keys
-            chmod 600 /root/.ssh/authorized_keys
-            
-            # Добавляем ключ если его еще нет
             local pub_key_content
             pub_key_content=$(cat "$pub_key_file")
             
-            if ! grep -Fq "$pub_key_content" /root/.ssh/authorized_keys; then
-                echo "$pub_key_content" >> /root/.ssh/authorized_keys
-                log_success "Публичный ключ добавлен в authorized_keys"
+            # Пытаемся скопировать в буфер обмена
+            if command -v xclip &>/dev/null; then
+                echo "$pub_key_content" | xclip -selection clipboard
+                log_success "Публичный ключ скопирован в буфер обмена (xclip)"
+            elif command -v pbcopy &>/dev/null; then
+                echo "$pub_key_content" | pbcopy
+                log_success "Публичный ключ скопирован в буфер обмена (pbcopy)"
+            elif command -v wl-copy &>/dev/null; then
+                echo "$pub_key_content" | wl-copy
+                log_success "Публичный ключ скопирован в буфер обмена (wl-copy)"
             else
-                log_info "Ключ уже присутствует в authorized_keys"
+                log_warning "Утилиты для буфера обмена не найдены (xclip/pbcopy/wl-copy)"
             fi
             
-            # Показываем публичный ключ для копирования
+            # Показываем публичный ключ
             echo
-            log_info "📋 Публичный ключ для копирования на другие серверы:"
+            log_info "📋 Сгенерированный публичный ключ:"
             echo "════════════════════════════════════════════════════════════════"
             cat "$pub_key_file"
             echo "════════════════════════════════════════════════════════════════"
             echo
-            log_info "💡 Скопируйте этот ключ и добавьте его на других серверах через:"
-            log_info "   sudo ss → 3. Импорт публичного ключа"
+            log_info "💡 Теперь можете:"
+            log_info "   1. Добавить его на этом сервере: пункт 3 → вставить из буфера"
+            log_info "   2. Добавить на других серверах: sudo ss → 3. Импорт ключа"
             echo
             read -p "Нажмите Enter для продолжения..." -r
         fi
@@ -367,30 +368,228 @@ list_authorized_keys() {
     echo "════════════════════════════════════════"
 }
 
+# Управление authorized_keys (объединенная функция)
+manage_authorized_keys() {
+    while true; do
+        clear
+        echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║      Управление authorized_keys      ║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+        echo
+        
+        if [[ ! -f /root/.ssh/authorized_keys ]]; then
+            log_warning "Файл authorized_keys не существует"
+            echo
+            echo "1. 🔙 Назад в SSH меню"
+            echo
+            read -p "Нажмите 1 для возврата: " -n 1 -r choice
+            echo
+            if [[ "$choice" == "1" ]]; then
+                return 0
+            fi
+            continue
+        fi
+        
+        local key_count
+        key_count=$(grep -c "^ssh-" /root/.ssh/authorized_keys 2>/dev/null || echo "0")
+        
+        if [[ "$key_count" -eq 0 ]]; then
+            log_warning "В authorized_keys нет SSH ключей"
+            echo
+            echo "1. 🔙 Назад в SSH меню"
+            echo
+            read -p "Нажмите 1 для возврата: " -n 1 -r choice
+            echo
+            if [[ "$choice" == "1" ]]; then
+                return 0
+            fi
+            continue
+        fi
+        
+        log_info "📋 Найдено ключей: $key_count"
+        echo "════════════════════════════════════════════════════════════════"
+        
+        local line_num=1
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^ssh- ]]; then
+                local key_type="${line%% *}"
+                local key_comment="${line##* }"
+                if [[ "$key_comment" == "$line" ]]; then
+                    key_comment="(без комментария)"
+                fi
+                echo "$line_num. $key_type ... $key_comment"
+                ((line_num++))
+            fi
+        done < /root/.ssh/authorized_keys
+        
+        echo "════════════════════════════════════════════════════════════════"
+        echo
+        echo "Выберите действие:"
+        echo "1. 📋 Скопировать ключ в буфер обмена"
+        echo "2. 🗑️  Удалить ключ"
+        echo "3. 👁️  Показать полный ключ"
+        echo "0. 🔙 Назад в SSH меню"
+        echo
+        read -p "Выберите действие [0-3]: " -n 1 -r action
+        echo
+        
+        case $action in
+            1) copy_authorized_key "$key_count" ;;
+            2) remove_authorized_key "$key_count" ;;
+            3) show_full_key "$key_count" ;;
+            0) return 0 ;;
+            *)
+                log_error "Неверный выбор: '$action'"
+                sleep 2
+                continue
+                ;;
+        esac
+        
+        if [[ "$action" != "0" ]]; then
+            echo
+            read -p "Нажмите Enter для продолжения..." -r
+        fi
+    done
+}
+
+# Копирование ключа в буфер обмена
+copy_authorized_key() {
+    local max_keys="$1"
+    read -p "Введите номер ключа для копирования [1-$max_keys]: " -r key_num
+    
+    if [[ ! "$key_num" =~ ^[0-9]+$ ]] || [[ "$key_num" -lt 1 ]] || [[ "$key_num" -gt "$max_keys" ]]; then
+        log_error "Неверный номер ключа"
+        return 1
+    fi
+    
+    local line_num=1
+    local found_key=""
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^ssh- ]]; then
+            if [[ "$line_num" -eq "$key_num" ]]; then
+                found_key="$line"
+                break
+            fi
+            ((line_num++))
+        fi
+    done < /root/.ssh/authorized_keys
+    
+    if [[ -n "$found_key" ]]; then
+        # Пытаемся скопировать в буфер обмена
+        if command -v xclip &>/dev/null; then
+            echo "$found_key" | xclip -selection clipboard
+            log_success "Ключ скопирован в буфер обмена (xclip)"
+        elif command -v pbcopy &>/dev/null; then
+            echo "$found_key" | pbcopy
+            log_success "Ключ скопирован в буфер обмена (pbcopy)"
+        elif command -v wl-copy &>/dev/null; then
+            echo "$found_key" | wl-copy
+            log_success "Ключ скопирован в буфер обмена (wl-copy)"
+        else
+            log_warning "Утилиты для буфера обмена не найдены"
+            echo "Ключ:"
+            echo "$found_key"
+        fi
+    else
+        log_error "Ключ не найден"
+    fi
+}
+
+# Показ полного ключа
+show_full_key() {
+    local max_keys="$1"
+    read -p "Введите номер ключа для просмотра [1-$max_keys]: " -r key_num
+    
+    if [[ ! "$key_num" =~ ^[0-9]+$ ]] || [[ "$key_num" -lt 1 ]] || [[ "$key_num" -gt "$max_keys" ]]; then
+        log_error "Неверный номер ключа"
+        return 1
+    fi
+    
+    local line_num=1
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^ssh- ]]; then
+            if [[ "$line_num" -eq "$key_num" ]]; then
+                echo "════════════════════════════════════════════════════════════════"
+                echo "$line"
+                echo "════════════════════════════════════════════════════════════════"
+                return 0
+            fi
+            ((line_num++))
+        fi
+    done < /root/.ssh/authorized_keys
+    
+    log_error "Ключ не найден"
+}
+
 # Удаление ключа по номеру строки
 remove_authorized_key() {
-    clear
-    local auth_file="/root/.ssh/authorized_keys"
-    if [[ ! -s "$auth_file" ]]; then
-        log_warning "authorized_keys не найден или пуст"
+    local max_keys="$1"
+    read -p "Введите номер ключа для удаления [1-$max_keys]: " -r key_num
+    
+    if [[ ! "$key_num" =~ ^[0-9]+$ ]] || [[ "$key_num" -lt 1 ]] || [[ "$key_num" -gt "$max_keys" ]]; then
+        log_error "Неверный номер ключа"
+        return 1
+    fi
+    
+    # Показываем ключ, который будет удален
+    local line_num=1
+    local found_key=""
+    local key_comment=""
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^ssh- ]]; then
+            if [[ "$line_num" -eq "$key_num" ]]; then
+                found_key="$line"
+                key_comment="${line##* }"
+                if [[ "$key_comment" == "$line" ]]; then
+                    key_comment="(без комментария)"
+                fi
+                break
+            fi
+            ((line_num++))
+        fi
+    done < /root/.ssh/authorized_keys
+    
+    if [[ -z "$found_key" ]]; then
+        log_error "Ключ не найден"
+        return 1
+    fi
+    
+    echo
+    log_warning "Будет удален ключ: $key_comment"
+    echo "Ключ: ${found_key:0:50}..."
+    echo
+    read -p "Подтвердите удаление (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Удаление отменено"
         return 0
     fi
-    list_authorized_keys
-    read -p "Введите номер ключа для удаления: " -r line_no
-    if [[ ! "$line_no" =~ ^[0-9]+$ ]]; then
-        log_error "Неверный ввод"
-        return 1
-    fi
-    local total
-    total=$(wc -l < "$auth_file")
-    if (( line_no < 1 || line_no > total )); then
-        log_error "Номер вне диапазона (1-$total)"
-        return 1
-    fi
-    backup_file="${auth_file}.backup.$(date +%Y%m%d_%H%M%S)"
-    cp "$auth_file" "$backup_file"
-    sed -i "${line_no}d" "$auth_file"
-    log_success "Ключ №$line_no удалён (резервная копия: $backup_file)"
+    
+    # Создаем резервную копию
+    local backup_file
+    backup_file="/root/.ssh/authorized_keys.backup.$(date +%Y%m%d_%H%M%S)"
+    cp /root/.ssh/authorized_keys "$backup_file"
+    log_info "Резервная копия: $backup_file"
+    
+    # Удаляем ключ
+    local temp_file
+    temp_file=$(mktemp)
+    line_num=1
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^ssh- ]]; then
+            if [[ "$line_num" -ne "$key_num" ]]; then
+                echo "$line" >> "$temp_file"
+            fi
+            ((line_num++))
+        else
+            echo "$line" >> "$temp_file"
+        fi
+    done < /root/.ssh/authorized_keys
+    
+    mv "$temp_file" /root/.ssh/authorized_keys
+    chmod 600 /root/.ssh/authorized_keys
+    
+    log_success "Ключ удален успешно"
 }
 
 # Показать текущие настройки SSH
@@ -469,14 +668,13 @@ configure_ssh_security() {
         echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
         echo
         echo "1. 🔧 Изменить SSH порт (+ автообновление UFW)"
-        echo "2. 🔑 Генерировать и установить SSH ключи"
+        echo "2. 🔑 Генерировать SSH ключи"
         echo "3. 📥 Импортировать публичный ключ в authorized_keys"
         echo "4. 📋 Показать текущие настройки"
         echo "5. 🔒 Отключить парольную авторизацию"
         echo "6. 🚫 Отключить root SSH вход"
-        echo "7. 📜 Показать authorized_keys"
-        echo "8. 🗑️  Удалить ключ из authorized_keys"
-        echo "9. 🔄 Перезапустить SSH службу"
+        echo "7. 📜 Управление authorized_keys (просмотр/копирование/удаление)"
+        echo "8. 🔄 Перезапустить SSH службу"
         echo "0. ⬅️  Назад в главное меню"
         echo
         read -p "Выберите действие [0-9]: " -n 1 -r choice
@@ -484,14 +682,13 @@ configure_ssh_security() {
         
         case $choice in
             1) change_ssh_port ;;
-            2) generate_and_install_ssh_key ;;
+            2) generate_ssh_key ;;
             3) install_public_key ;;
             4) show_ssh_status ;;
             5) disable_password_auth ;;
             6) disable_root_login ;;
-            7) list_authorized_keys ;;
-            8) remove_authorized_key ;;
-            9) restart_ssh ;;
+            7) manage_authorized_keys ;;
+            8) restart_ssh ;;
             0) return 0 ;;
             *)
                 log_error "Неверный выбор: '$choice'"

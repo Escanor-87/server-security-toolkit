@@ -83,18 +83,34 @@ add_firewall_rule() {
     echo
     
     local port
-    read -p "Введите порт: " -r port
-    if [[ ! "$port" =~ ^[0-9]+$ ]]; then
-        log_error "Неверный формат порта"
-        return 1
-    fi
+    while true; do
+        read -p "Введите порт: " -r port
+        
+        if [[ -z "$port" ]]; then
+            log_warning "Порт не может быть пустым. Попробуйте снова."
+            continue
+        fi
+        
+        if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+            log_error "Неверный формат порта. Используйте только цифры."
+            continue
+        fi
+        
+        if [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
+            log_error "Порт должен быть от 1 до 65535"
+            continue
+        fi
+        
+        break
+    done
     
     echo "Выберите протокол:"
     echo "1. TCP"
     echo "2. UDP" 
     echo "3. TCP и UDP"
+    echo "0. 🔙 Назад в меню файрвола"
     local proto_choice
-    read -p "Выбор [1-3]: " -n 1 -r proto_choice
+    read -p "Выбор [0-3]: " -n 1 -r proto_choice
     echo
     
     local protocol
@@ -102,6 +118,7 @@ add_firewall_rule() {
         1) protocol="tcp" ;;
         2) protocol="udp" ;;
         3) protocol="" ;;
+        0) return 0 ;;
         *) log_error "Неверный выбор"; return 1 ;;
     esac
     
