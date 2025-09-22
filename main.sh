@@ -179,9 +179,10 @@ show_menu() {
     echo "4. 🚀 Full Security Setup - Полная настройка безопасности"
     echo "5. ℹ️  System Information - Информация о системе"
     echo "6. 📋 View Logs - Просмотр логов"
+    echo "7. 🗑️  Uninstall - Удалить Security Toolkit"
     echo "0. 🚪 Exit - Выход"
     echo
-    echo -n "Введите номер действия [0-6]: "
+    echo -n "Введите номер действия [0-7]: "
 }
 
 # Информация о системе - исправляем SC2155
@@ -376,6 +377,142 @@ view_logs() {
     done
 }
 
+# Функция удаления Security Toolkit
+uninstall_toolkit() {
+    clear
+    echo -e "${RED}╔══════════════════════════════════════╗${NC}"
+    echo -e "${RED}║        Удаление Security Toolkit     ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════╝${NC}"
+    echo
+    
+    log_warning "⚠️  ВНИМАНИЕ: Это действие полностью удалит Security Toolkit!"
+    echo
+    echo "Будет удалено:"
+    echo "• Исполняемые файлы и модули"
+    echo "• Символические ссылки (/usr/local/bin/security-toolkit, /usr/local/bin/ss)"
+    echo "• Конфигурационные файлы"
+    echo "• Логи (опционально)"
+    echo "• Резервные копии SSH и UFW (опционально)"
+    echo
+    
+    read -p "Продолжить удаление? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Удаление отменено"
+        return 0
+    fi
+    
+    echo
+    read -p "Удалить также резервные копии SSH и UFW? (y/N): " -n 1 -r
+    echo
+    local remove_backups="false"
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        remove_backups="true"
+        log_warning "Резервные копии будут удалены!"
+    else
+        log_info "Резервные копии будут сохранены"
+    fi
+    
+    echo
+    read -p "Удалить логи? (y/N): " -n 1 -r
+    echo
+    local remove_logs="false"
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        remove_logs="true"
+        log_warning "Логи будут удалены!"
+    else
+        log_info "Логи будут сохранены"
+    fi
+    
+    echo
+    log_info "Начинаю удаление..."
+    
+    # Удаляем символические ссылки
+    if [[ -L "/usr/local/bin/security-toolkit" ]]; then
+        rm -f "/usr/local/bin/security-toolkit"
+        log_success "Удалена ссылка: /usr/local/bin/security-toolkit"
+    fi
+    
+    if [[ -L "/usr/local/bin/ss" ]]; then
+        rm -f "/usr/local/bin/ss"
+        log_success "Удалена ссылка: /usr/local/bin/ss"
+    fi
+    
+    # Удаляем резервные копии SSH
+    if [[ "$remove_backups" == "true" ]]; then
+        if [[ -d "/etc/ssh" ]]; then
+            find /etc/ssh -name "sshd_config.backup.*" -delete 2>/dev/null
+            log_success "Удалены резервные копии SSH конфигурации"
+        fi
+        
+        if [[ -d "/root/.ssh" ]]; then
+            find /root/.ssh -name "authorized_keys.backup.*" -delete 2>/dev/null
+            log_success "Удалены резервные копии authorized_keys"
+        fi
+        
+        if [[ -d "/etc/ufw/backup" ]]; then
+            rm -rf "/etc/ufw/backup"
+            log_success "Удалены резервные копии UFW"
+        fi
+    fi
+    
+    # Удаляем логи
+    if [[ "$remove_logs" == "true" && -d "$SCRIPT_DIR/logs" ]]; then
+        rm -rf "$SCRIPT_DIR/logs"
+        log_success "Удалены логи"
+    fi
+    
+    # Удаляем основную директорию (кроме логов если они сохраняются)
+    local items_to_remove=(
+        "$SCRIPT_DIR/main.sh"
+        "$SCRIPT_DIR/install.sh"
+        "$SCRIPT_DIR/modules"
+        "$SCRIPT_DIR/configs"
+        "$SCRIPT_DIR/keys"
+        "$SCRIPT_DIR/scripts"
+        "$SCRIPT_DIR/tests"
+        "$SCRIPT_DIR/docs"
+        "$SCRIPT_DIR/.vscode"
+        "$SCRIPT_DIR/README.md"
+        "$SCRIPT_DIR/QUICKSTART.md"
+        "$SCRIPT_DIR/.gitignore"
+    )
+    
+    for item in "${items_to_remove[@]}"; do
+        if [[ -e "$item" ]]; then
+            rm -rf "$item"
+            log_success "Удален: $(basename "$item")"
+        fi
+    done
+    
+    # Удаляем пустую директорию если логи тоже удалены
+    if [[ "$remove_logs" == "true" && -d "$SCRIPT_DIR" ]]; then
+        rmdir "$SCRIPT_DIR" 2>/dev/null && log_success "Удалена директория: $SCRIPT_DIR"
+    fi
+    
+    echo
+    log_success "🎉 Security Toolkit успешно удален!"
+    
+    if [[ "$remove_backups" == "false" ]]; then
+        echo
+        log_info "📋 Сохраненные резервные копии:"
+        echo "• SSH конфигурация: /etc/ssh/sshd_config.backup.*"
+        echo "• authorized_keys: /root/.ssh/authorized_keys.backup.*"
+        echo "• UFW правила: /etc/ufw/backup/"
+    fi
+    
+    if [[ "$remove_logs" == "false" ]]; then
+        echo
+        log_info "📋 Сохраненные логи: $SCRIPT_DIR/logs/"
+    fi
+    
+    echo
+    log_info "Спасибо за использование Server Security Toolkit! 👋"
+    echo
+    read -p "Нажмите Enter для выхода..." -r
+    exit 0
+}
+
 # Загрузка конфигурации по умолчанию
 load_default_config() {
     local config_file="${SCRIPT_DIR}/configs/defaults.env"
@@ -517,7 +654,7 @@ main() {
     # Главный цикл
     while true; do
         show_menu
-        read -r choice
+        read -n 1 -r choice
         echo
         
         case $choice in
@@ -560,6 +697,10 @@ main() {
             6) 
                 log_info "Пользователь выбрал: View Logs"
                 view_logs 
+                ;;
+            7) 
+                log_info "Пользователь выбрал: Uninstall"
+                uninstall_toolkit
                 ;;
             0) 
                 log_info "До свидания! 👋"
