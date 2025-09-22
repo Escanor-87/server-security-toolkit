@@ -114,10 +114,17 @@ setup_permissions() {
     chmod +x main.sh modules/*.sh tests/*.sh
     
     # Создаем символическую ссылку для удобства
-    if [[ -L "$SYMLINK_PATH" ]]; then
+    if [[ -L "$SYMLINK_PATH" ]] || [[ -f "$SYMLINK_PATH" ]]; then
         rm "$SYMLINK_PATH"
     fi
     ln -s "$INSTALL_DIR/main.sh" "$SYMLINK_PATH"
+    
+    # Проверяем, что символическая ссылка работает
+    if [[ -L "$SYMLINK_PATH" ]] && [[ -f "$(readlink -f "$SYMLINK_PATH")" ]]; then
+        log_success "Символическая ссылка создана и проверена"
+    else
+        log_warning "Проблема с символической ссылкой, используйте прямой путь"
+    fi
     
     log_success "Права доступа настроены"
     log_info "Создана символическая ссылка: $SYMLINK_PATH"

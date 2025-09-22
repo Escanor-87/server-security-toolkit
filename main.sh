@@ -15,8 +15,14 @@ readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
 
-# Директории проекта - исправляем SC2155
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Директории проекта - исправляем SC2155 и поддерживаем символические ссылки
+if [[ -L "${BASH_SOURCE[0]}" ]]; then
+    # Если запущен через символическую ссылку, получаем реальный путь
+    SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+else
+    # Обычное определение директории
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 readonly SCRIPT_DIR
 readonly MODULES_DIR="${SCRIPT_DIR}/modules"
 readonly LOGS_DIR="${SCRIPT_DIR}/logs"
@@ -342,7 +348,9 @@ full_security_setup_interactive() {
 # Главная функция
 main() {
     log_info "🚀 Запуск Server Security Toolkit v$VERSION"
+    log_info "Скрипт запущен из: ${BASH_SOURCE[0]}"
     log_info "Рабочая директория: $SCRIPT_DIR"
+    log_info "Директория модулей: $MODULES_DIR"
     log_info "Файл логов: $LOG_FILE"
     
     # Проверки
