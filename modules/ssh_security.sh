@@ -305,13 +305,36 @@ generate_ssh_key() {
     
     mkdir -p "$key_dir"
     
+    # Проверяем существующие ключи
+    local existing_keys=()
     if [[ -f "$key_path" ]]; then
-        log_warning "Ключ уже существует: $key_path"
-        read -p "Перегенерировать? (y/N): " -n 1 -r
+        existing_keys+=("$key_path")
+    fi
+    if [[ -f "$key_path.pub" ]]; then
+        existing_keys+=("$key_path.pub")
+    fi
+    
+    if [[ ${#existing_keys[@]} -gt 0 ]]; then
+        log_warning "Найдены существующие ключи:"
+        for key in "${existing_keys[@]}"; do
+            echo "  - $(basename "$key")"
+        done
+        echo
+        read -p "Перегенерировать ключи? (y/N): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Генерация отменена"
             return 0
         fi
+        
+        # Создаем бекап существующих ключей
+        for key in "${existing_keys[@]}"; do
+            if [[ -f "$key" ]]; then
+                local backup_key="${key}.backup.$(date +%Y%m%d_%H%M%S)"
+                cp "$key" "$backup_key"
+                log_success "Создан бекап: $(basename "$backup_key")"
+            fi
+        done
     fi
     
     log_info "Генерация RSA ключа 4096 бит..."
@@ -323,6 +346,28 @@ generate_ssh_key() {
         chmod 644 "$key_path.pub"
         
         log_success "SSH ключ сгенерирован успешно!"
+        
+        # Автоматически добавляем ключ в authorized_keys
+        local auth_file="/root/.ssh/authorized_keys"
+        local pubkey_content
+        pubkey_content=$(cat "$key_path.pub")
+        
+        if [[ -f "$auth_file" ]] && grep -Fxq "$pubkey_content" "$auth_file"; then
+            log_info "Ключ уже присутствует в authorized_keys"
+        else
+            # Создаем бекап authorized_keys если он существует
+            if [[ -f "$auth_file" ]]; then
+                local auth_backup="${auth_file}.backup.$(date +%Y%m%d_%H%M%S)"
+                cp "$auth_file" "$auth_backup"
+                log_success "Создан бекап authorized_keys: $(basename "$auth_backup")"
+            fi
+            
+            # Добавляем ключ
+            echo "$pubkey_content" >> "$auth_file"
+            chmod 600 "$auth_file"
+            log_success "Ключ добавлен в authorized_keys"
+        fi
+        
         echo
         echo "Публичный ключ:"
         echo "════════════════════════════════════════"
@@ -467,14 +512,26 @@ manage_authorized_keys() {
         if [[ "$key_count" -eq 0 ]]; then
             log_warning "В authorized_keys нет SSH ключей"
             echo
-            echo "1. 🔙 Назад в SSH меню"
+            echo "Возможные действия:"
+            echo "1. 📥 Импортировать ключ"
+            echo "0. 🔙 Назад в SSH меню"
             echo
-            read -p "Нажмите 1 для возврата: " -n 1 -r choice
+            read -p "Выберите действие [0-1]: " -n 1 -r choice
             echo
-            if [[ "$choice" == "1" ]]; then
-                return 0
-            fi
-            continue
+            case $choice in
+                1) 
+                    install_public_key
+                    continue
+                    ;;
+                0) 
+                    return 0
+                    ;;
+                *)
+                    log_error "Неверный выбор: '$choice'"
+                    sleep 1
+                    continue
+                    ;;
+            esac
         fi
         
         log_info "📋 Найдено ключей: $key_count"
@@ -636,11 +693,11 @@ remove_authorized_key() {
         return 0
     fi
     
-    # Создаем резервную копию
+    # Создаем бекап перед удалением
     local backup_file
     backup_file="/root/.ssh/authorized_keys.backup.$(date +%Y%m%d_%H%M%S)"
     cp /root/.ssh/authorized_keys "$backup_file"
-    log_info "Резервная копия: $backup_file"
+    log_success "Создан бекап: $backup_file"
     
     # Удаляем ключ
     local temp_file
@@ -661,6 +718,16 @@ remove_authorized_key() {
     chmod 600 /root/.ssh/authorized_keys
     
     log_success "Ключ удален успешно"
+    
+    echo
+    log_info "💾 Бекап создан: $(basename "$backup_file")"
+    read -p "Хотите восстановить удаленный ключ? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        cp "$backup_file" /root/.ssh/authorized_keys
+        chmod 600 /root/.ssh/authorized_keys
+        log_success "Ключ восстановлен из бекапа"
+    fi
 }
 
 # Показать текущие настройки SSH
@@ -760,10 +827,7 @@ ssh_key_management() {
                 ;;
         esac
         
-        if [[ "$key_choice" != "0" ]]; then
-            echo
-            read -p "Нажмите Enter для продолжения..." -r
-        fi
+        # Убираем подтверждение - возврат мгновенный
     done
 }
 
