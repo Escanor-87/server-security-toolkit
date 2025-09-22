@@ -76,16 +76,35 @@ check_os() {
     # shellcheck disable=SC1091
     source /etc/os-release
     
-    if [[ "$ID" != "ubuntu" ]]; then
-        log_warning "Скрипт оптимизирован для Ubuntu"
-        log_info "Обнаружена ОС: $PRETTY_NAME"
-        read -p "Продолжить выполнение? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            log_info "Выполнение прервано пользователем"
-            exit 1
-        fi
-    fi
+    case "$ID" in
+        ubuntu)
+            log_info "Обнаружена поддерживаемая ОС: $PRETTY_NAME"
+            ;;
+        debian)
+            if [[ "$VERSION_ID" == "12" ]]; then
+                log_info "Обнаружена поддерживаемая ОС: $PRETTY_NAME"
+            else
+                log_warning "Обнаружен Debian $VERSION_ID. Рекомендуется Debian 12"
+                log_info "Обнаружена ОС: $PRETTY_NAME"
+                read -p "Продолжить выполнение? (y/N): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    log_info "Выполнение прервано пользователем"
+                    exit 1
+                fi
+            fi
+            ;;
+        *)
+            log_warning "Скрипт оптимизирован для Ubuntu и Debian 12"
+            log_info "Обнаружена ОС: $PRETTY_NAME"
+            read -p "Продолжить выполнение? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                log_info "Выполнение прервано пользователем"
+                exit 1
+            fi
+            ;;
+    esac
 }
 
 # Проверка системных требований

@@ -107,6 +107,61 @@ EOF
     systemctl is-active --quiet fail2ban && log_success "fail2ban перезапущен" || log_warning "fail2ban не активен"
 }
 
+# Установка и настройка автоматических обновлений
+install_unattended_upgrades() {
+    clear
+    log_info "🛠️ Установка unattended-upgrades"
+    echo
+    
+    # Проверяем ОС для специфичных настроек
+    local os_id=""
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        source /etc/os-release
+        os_id="$ID"
+    fi
+    
+    if command -v unattended-upgrade &>/dev/null; then
+        log_success "unattended-upgrades уже установлен"
+    else
+        if apt update && apt install -y unattended-upgrades apt-listchanges; then
+            log_success "unattended-upgrades установлен"
+        else
+            log_error "Не удалось установить unattended-upgrades"
+            return 1
+        fi
+    fi
+
+    log_info "Включение автоматических обновлений..."
+    dpkg-reconfigure -f noninteractive unattended-upgrades || true
+
+    # Конфигурация автообновлений
+    local auto_conf="/etc/apt/apt.conf.d/20auto-upgrades"
+    cat > "$auto_conf" <<EOF
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+    log_success "Настроен $auto_conf"
+
+    # Дополнительная конфигурация для Debian
+    if [[ "$os_id" == "debian" ]]; then
+        local unattended_conf="/etc/apt/apt.conf.d/50unattended-upgrades"
+        if [[ -f "$unattended_conf" ]]; then
+            # Убеждаемся, что security обновления включены для Debian
+            if ! grep -q "Debian-Security" "$unattended_conf"; then
+                log_info "Настройка security обновлений для Debian..."
+                sed -i '/Unattended-Upgrade::Allowed-Origins {/a\\t"origin=Debian,codename=${distro_codename}-security";' "$unattended_conf"
+            fi
+        fi
+    fi
+
+    systemctl enable unattended-upgrades || true
+    systemctl restart unattended-upgrades || true
+    log_success "Автообновления включены"
+}
+
 # Показать статус безопасности
 show_security_status() {
     clear
