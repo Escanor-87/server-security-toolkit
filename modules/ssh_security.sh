@@ -1,36 +1,28 @@
 #!/bin/bash
 
 # SSH Security Module v1.0
-# Модуль настройки безопасности SSH
 
-# Константы модуля
 readonly SSH_CONFIG="/etc/ssh/sshd_config"
-readonly SSH_SERVICE="sshd"
-readonly AUTHORIZED_KEYS_DIR="/root/.ssh"
-readonly DEFAULT_NEW_PORT=2222
 
-# Проверка, что модуль загружается корректно
-if [[ -z "${SCRIPT_DIR:-}" ]]; then
-    echo "ERROR: SSH Security Module должен загружаться из main.sh"
-    exit 1
-fi
-
-# === БАЗОВЫЕ ФУНКЦИИ ===
-
-# Создание резервной копии SSH конфигурации
-backup_ssh_config() {
-    local backup_file="${SSH_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
-    
-    log_info "Создание резервной копии SSH конфигурации..."
-    
-    if [[ ! -f "$SSH_CONFIG" ]]; then
-        log_error "SSH конфигурация не найдена: $SSH_CONFIG"
-        return 1
+# Вспомогательная функция: идемпотентная установка опции в sshd_config
+set_sshd_config_option() {
+    # usage: set_sshd_config_option "Directive" "value"
+    local directive="$1"
+    local value="$2"
+    if grep -Eq "^#?${directive}\\b" "$SSH_CONFIG"; then
+        # Заменяем существующую строку (включая закомментированную)
+        sed -i "s~^#\?${directive}.*~${directive} ${value}~" "$SSH_CONFIG"
+    else
+        echo "${directive} ${value}" >> "$SSH_CONFIG"
     fi
-    
-    if cp "$SSH_CONFIG" "$backup_file"; then
-        log_success "Резервная копия создана: $backup_file"
-        echo "$backup_file"
+}
+
+# Резервная копия SSH конфигурации
+backup_ssh_config() {
+    local backup_file
+    backup_file="${SSH_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
+    if cp "$SSH_CONFIG" "$backup_file" 2>/dev/null; then
+        log_success "Резервная копия: $backup_file"
         return 0
     else
         log_error "Не удалось создать резервную копию"
@@ -38,568 +30,383 @@ backup_ssh_config() {
     fi
 }
 
-# Проверка валидности SSH конфигурации
-validate_ssh_config() {
-    log_info "Проверка валидности SSH конфигурации..."
+# Автоматическое обновление UFW для SSH порта
+update_ufw_ssh_port() {
+    local old_port="$1"
+    local new_port="$2"
     
-    if sshd -t 2>/dev/null; then
-        log_success "SSH конфигурация валидна"
+    if ! command -v ufw &>/dev/null; then
+        log_warning "UFW не установлен, пропускаем обновление правил"
         return 0
-    else
-        log_error "SSH конфигурация содержит ошибки"
-        log_info "Подробности ошибок:"
-        sshd -t
-        return 1
-    fi
-}
-
-# Перезапуск SSH сервиса с проверками
-restart_ssh_service() {
-    log_info "Перезапуск SSH службы..."
-    
-    # Проверяем конфигурацию перед перезапуском
-    if ! validate_ssh_config; then
-        log_error "Не перезапускаем SSH из-за ошибок в конфигурации"
-        return 1
     fi
     
-    # Перезапускаем службу
-    if systemctl restart "$SSH_SERVICE"; then
-        sleep 2  # Даем время на запуск
-        
-        if systemctl is-active "$SSH_SERVICE" &>/dev/null; then
-            log_success "SSH служба успешно перезапущена"
-            return 0
-        else
-            log_error "SSH служба не запустилась после перезапуска"
-            return 1
-        fi
-    else
-        log_error "Ошибка перезапуска SSH службы"
-        return 1
-    fi
-}
-
-# === ФУНКЦИИ ИЗМЕНЕНИЯ КОНФИГУРАЦИИ ===
-
-# Изменение параметра в SSH конфигурации
-modify_ssh_parameter() {
-    local parameter="$1"
-    local new_value="$2"
-    local comment="${3:-}"
-    
-    log_debug "Изменение параметра SSH: $parameter = $new_value"
-    
-    # Создаем временный файл
-    local temp_file="/tmp/sshd_config.tmp"
-    cp "$SSH_CONFIG" "$temp_file"
-    
-    # Удаляем существующие строки с параметром (закомментированные и активные)
-    sed -i "/^#*$parameter /d" "$temp_file"
-    
-    # Добавляем новый параметр
-    if [[ -n "$comment" ]]; then
-        echo "# $comment" >> "$temp_file"
-    fi
-    echo "$parameter $new_value" >> "$temp_file"
-    
-    # Проверяем результат
-    if sshd -t -f "$temp_file" 2>/dev/null; then
-        mv "$temp_file" "$SSH_CONFIG"
-        log_success "Параметр $parameter установлен в: $new_value"
+    # Проверяем, включен ли UFW
+    if ! ufw status | grep -q "Status: active"; then
+        log_warning "UFW не активен, пропускаем обновление правил"
         return 0
-    else
-        rm -f "$temp_file"
-        log_error "Ошибка при изменении параметра $parameter"
-        return 1
     fi
+    
+    log_info "Обновление правил UFW..."
+    
+    # Удаляем старое правило, если оно существует и порт не 22
+    if [[ "$old_port" != "22" ]] && ufw status numbered | grep -q "$old_port/tcp"; then
+        log_info "Удаление старого правила для порта $old_port"
+        ufw delete allow "$old_port/tcp" 2>/dev/null || true
+    fi
+    
+    # Добавляем новое правило
+    log_info "Добавление правила для нового SSH порта $new_port"
+    ufw allow "$new_port/tcp" comment "SSH"
+    
+    log_success "UFW правила обновлены для SSH порта $new_port"
 }
 
-# === ОСНОВНЫЕ ФУНКЦИИ БЕЗОПАСНОСТИ ===
-
-# Смена SSH порта
+# Изменение SSH порта
 change_ssh_port() {
-    log_info "🔧 Настройка SSH порта..."
+    clear
+    log_info "🔧 Изменение SSH порта (с автообновлением UFW)"
+    echo
     
-    # Получаем текущий порт
     local current_port
-    current_port=$(grep "^Port " "$SSH_CONFIG" 2>/dev/null | awk '{print $2}')
-    if [[ -z "$current_port" ]]; then
-        current_port="22"
+    current_port=$(grep "^Port" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "22")
+    echo "Текущий SSH порт: $current_port"
+    echo
+    
+    local new_port
+    read -p "Введите новый SSH порт (например: 2222, 2200, 22000): " -r new_port
+    
+    if [[ -z "$new_port" ]]; then
+        log_error "Порт не может быть пустым"
+        return 1
     fi
     
-    log_info "Текущий SSH порт: $current_port"
+    if [[ ! "$new_port" =~ ^[0-9]+$ ]] || [[ "$new_port" -lt 1024 ]] || [[ "$new_port" -gt 65535 ]]; then
+        log_error "Неверный порт. Используйте порт от 1024 до 65535"
+        return 1
+    fi
     
-    # Спрашиваем новый порт
-    local new_port
-    while true; do
-        echo
-        read -p "Введите новый SSH порт [$DEFAULT_NEW_PORT]: " new_port
-        new_port=${new_port:-$DEFAULT_NEW_PORT}
-        
-        # Проверяем валидность порта
-        if [[ "$new_port" =~ ^[0-9]+$ ]] && [[ "$new_port" -ge 1024 ]] && [[ "$new_port" -le 65535 ]]; then
-            if [[ "$new_port" != "$current_port" ]]; then
-                break
-            else
-                log_warning "Новый порт совпадает с текущим"
-            fi
-        else
-            log_error "Порт должен быть числом от 1024 до 65535"
-        fi
-    done
+    if [[ "$new_port" == "$current_port" ]]; then
+        log_warning "Новый порт совпадает с текущим"
+        return 0
+    fi
     
-    # Проверяем, не занят ли порт
-    if ss -tulpn | grep ":$new_port " &>/dev/null; then
-        log_warning "Порт $new_port уже используется другим сервисом"
-        read -p "Продолжить? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            return 1
-        fi
+    # Предупреждение об изменении UFW
+    echo
+    log_warning "⚠️  ВНИМАНИЕ: Будут автоматически обновлены правила UFW!"
+    echo "   - Старый порт $current_port будет удален из UFW (если не 22)"
+    echo "   - Новый порт $new_port будет добавлен в UFW"
+    echo
+    read -p "Продолжить изменение порта и обновление UFW? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Операция отменена"
+        return 0
     fi
     
     # Создаем резервную копию
-    local backup_file
-    if ! backup_file=$(backup_ssh_config); then
-        return 1
-    fi
+    backup_ssh_config
     
     # Изменяем порт
-    if modify_ssh_parameter "Port" "$new_port" "Custom SSH port for security"; then
-        log_success "SSH порт изменен с $current_port на $new_port"
-        
-        # Важное предупреждение
-        log_warning "ВАЖНО! Не забудьте:"
-        echo "  1. Открыть порт $new_port в файрволе"
-        echo "  2. Обновить настройки клиентов SSH"
-        echo "  3. Проверить доступ ПЕРЕД закрытием текущей сессии"
-        echo
-        
-        return 0
-    else
-        log_error "Не удалось изменить SSH порт"
-        return 1
-    fi
+    set_sshd_config_option "Port" "$new_port"
+    
+    # Обновляем UFW правила
+    update_ufw_ssh_port "$current_port" "$new_port"
+    
+    log_success "SSH порт изменен на $new_port"
+    log_info "🔥 UFW правила обновлены автоматически"
+    log_warning "⚠️  Обязательно протестируйте SSH подключение в новой сессии!"
 }
 
 # Отключение парольной авторизации
 disable_password_auth() {
-    log_info "🔒 Отключение парольной авторизации SSH..."
+    clear
+    log_info "🔒 Отключение парольной авторизации"
+    echo
     
-    # Проверяем текущее состояние
     local current_setting
-    current_setting=$(grep "^PasswordAuthentication" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}')
-    if [[ -z "$current_setting" ]]; then
-        current_setting="yes"  # По умолчанию включено
-    fi
-    
-    log_info "Текущая настройка PasswordAuthentication: $current_setting"
+    current_setting=$(grep "^PasswordAuthentication" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "yes")
+    echo "Текущая настройка: $current_setting"
     
     if [[ "$current_setting" == "no" ]]; then
         log_info "Парольная авторизация уже отключена"
         return 0
     fi
     
-    # Предупреждение
-    log_warning "ВНИМАНИЕ! Парольная авторизация будет отключена"
-    log_info "Убедитесь, что SSH ключи настроены и работают!"
+    log_warning "ВНИМАНИЕ! Убедитесь, что SSH ключи настроены!"
+    read -p "Отключить парольную авторизацию? (y/N): " -n 1 -r
     echo
-    read -p "Продолжить отключение парольной авторизации? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Отключение парольной авторизации отменено"
-        return 0
-    fi
     
-    # Создаем резервную копию
-    if ! backup_ssh_config >/dev/null; then
-        return 1
-    fi
-    
-    # Отключаем парольную авторизацию
-    if modify_ssh_parameter "PasswordAuthentication" "no" "Disable password authentication for security"; then
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        backup_ssh_config
+        set_sshd_config_option "PasswordAuthentication" "no"
         log_success "Парольная авторизация отключена"
-        
-        log_warning "КРИТИЧЕСКИ ВАЖНО!"
-        echo "  • Проверьте доступ по SSH ключу ПЕРЕД перезапуском SSH"
-        echo "  • Не закрывайте текущую сессию до проверки"
-        echo "  • Имейте план восстановления доступа"
-        echo
-        
-        return 0
     else
-        log_error "Не удалось отключить парольную авторизацию"
-        return 1
+        log_info "Операция отменена"
     fi
 }
 
-# Отключение root авторизации
+# Отключение root входа
 disable_root_login() {
-    log_info "🚫 Отключение прямого входа под root..."
-    
-    # Проверяем текущее состояние
+    clear
+    log_info "🚫 Отключение SSH входа для root"
+    echo
     local current_setting
-    current_setting=$(grep "^PermitRootLogin" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}')
-    if [[ -z "$current_setting" ]]; then
-        current_setting="yes"  # По умолчанию разрешено
-    fi
-    
-    log_info "Текущая настройка PermitRootLogin: $current_setting"
-    
-    if [[ "$current_setting" == "no" ]]; then
-        log_info "Вход под root уже отключен"
-        return 0
-    fi
-    
-    # Предупреждение
-    log_warning "ВНИМАНИЕ! Прямой вход под root будет отключен"
-    log_info "Убедитесь, что есть другой пользователь с sudo правами!"
+    current_setting=$(grep "^PermitRootLogin" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "yes")
+    echo "Текущая настройка PermitRootLogin: $current_setting"
     echo
-    read -p "Продолжить отключение root входа? (y/N): " -n 1 -r
+    read -p "Отключить вход root (PermitRootLogin no)? (y/N): " -n 1 -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Отключение root входа отменено"
-        return 0
-    fi
-    
-    # Создаем резервную копию
-    if ! backup_ssh_config >/dev/null; then
-        return 1
-    fi
-    
-    # Отключаем root вход
-    if modify_ssh_parameter "PermitRootLogin" "no" "Disable direct root login for security"; then
-        log_success "Прямой вход под root отключен"
-        
-        log_warning "ВАЖНО! Убедитесь, что у вас есть:"
-        echo "  • Другой пользователь с sudo правами"
-        echo "  • Возможность войти под этим пользователем"
-        echo "  • План восстановления доступа"
-        echo
-        
-        return 0
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        backup_ssh_config
+        set_sshd_config_option "PermitRootLogin" "no"
+        log_success "Root вход по SSH отключен"
     else
-        log_error "Не удалось отключить root вход"
-        return 1
+        log_info "Операция отменена"
     fi
 }
 
-# === УПРАВЛЕНИЕ SSH КЛЮЧАМИ ===
-
-# Генерация SSH ключа
+# Генерация SSH ключей
 generate_ssh_key() {
-    log_info "🔑 Генерация SSH ключа..."
+    clear
+    log_info "🔑 Генерация SSH ключей"
+    echo
     
     local key_name="server_security_key"
-    local key_path="${KEYS_DIR}/${key_name}"
-    local key_comment="Generated by Server Security Toolkit $(date +%Y-%m-%d)"
+    local key_dir="/root/.ssh"
+    local key_path="$key_dir/$key_name"
     
-    # Создаем директорию для ключей
-    mkdir -p "$KEYS_DIR"
+    mkdir -p "$key_dir"
     
-    # Проверяем, существует ли уже ключ
-    if [[ -f "${key_path}" ]]; then
-        log_warning "Ключ уже существует: ${key_path}"
-        read -p "Перегенерировать ключ? (y/N): " -n 1 -r
+    if [[ -f "$key_path" ]]; then
+        log_warning "Ключ уже существует: $key_path"
+        read -p "Перегенерировать? (y/N): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             return 0
         fi
     fi
     
-    # Генерируем ключ
     log_info "Генерация RSA ключа 4096 бит..."
+    local key_comment
+    key_comment="Server Security Toolkit $(date +%Y-%m-%d)"
+    
     if ssh-keygen -t rsa -b 4096 -f "$key_path" -N "" -C "$key_comment"; then
-        log_success "SSH ключ сгенерирован:"
-        echo "  Приватный ключ: ${key_path}"
-        echo "  Публичный ключ: ${key_path}.pub"
-        
-        # Устанавливаем правильные права
         chmod 600 "$key_path"
-        chmod 644 "${key_path}.pub"
+        chmod 644 "$key_path.pub"
         
-        log_info "Содержимое публичного ключа:"
+        log_success "SSH ключ сгенерирован успешно!"
+        echo
+        echo "Публичный ключ:"
         echo "════════════════════════════════════════"
-        cat "${key_path}.pub"
+        cat "$key_path.pub"
         echo "════════════════════════════════════════"
-        
-        return 0
     else
-        log_error "Не удалось сгенерировать SSH ключ"
-        return 1
+        log_error "Ошибка генерации ключа"
     fi
 }
 
-# Установка SSH ключа
-install_ssh_key() {
-    log_info "📥 Установка SSH ключа для авторизации..."
-    
-    # Опции установки
-    echo "Выберите способ установки ключа:"
-    echo "1. Использовать сгенерированный ключ"
-    echo "2. Импортировать существующий ключ"
-    echo "3. Ввести публичный ключ вручную"
-    echo "0. Отмена"
+# Импорт публичного ключа в authorized_keys
+install_public_key() {
+    clear
+    log_info "📥 Импорт публичного ключа в authorized_keys"
     echo
-    read -p "Выберите опцию [1-3, 0]: " -n 1 -r choice
+    local auth_dir="/root/.ssh"
+    local auth_file="$auth_dir/authorized_keys"
+    mkdir -p "$auth_dir"
+    chmod 700 "$auth_dir"
+
+    echo "Выберите источник ключа:"
+    echo "1. Вставить ключ вручную"
+    echo "2. Путь к файлу с ключом (.pub)"
+    read -p "Выбор [1-2]: " -n 1 -r src_choice
     echo
-    
-    local public_key_content=""
-    
-    case $choice in
+
+    local pubkey
+    case "$src_choice" in
         1)
-            # Используем сгенерированный ключ
-            local generated_key="${KEYS_DIR}/server_security_key.pub"
-            if [[ -f "$generated_key" ]]; then
-                public_key_content=$(cat "$generated_key")
-                log_info "Используем сгенерированный ключ"
-            else
-                log_error "Сгенерированный ключ не найден. Сначала генерируйте ключ."
-                return 1
-            fi
+            echo "Вставьте публичный ключ (начиная с ssh-rsa/ssh-ed25519) и нажмите Enter:"
+            read -r pubkey
             ;;
         2)
-            # Импортируем существующий ключ
-            read -p "Путь к файлу публичного ключа: " key_file
-            if [[ -f "$key_file" ]]; then
-                public_key_content=$(cat "$key_file")
-                log_success "Ключ загружен из: $key_file"
-            else
-                log_error "Файл не найден: $key_file"
+            read -p "Укажите путь к файлу публичного ключа: " -r key_path
+            if [[ ! -f "$key_path" ]]; then
+                log_error "Файл не найден: $key_path"
                 return 1
             fi
-            ;;
-        3)
-            # Вводим ключ вручную
-            echo "Вставьте публичный ключ (начинается с ssh-rsa, ssh-ed25519 и т.д.):"
-            read -r public_key_content
-            ;;
-        0)
-            log_info "Установка ключа отменена"
-            return 0
+            pubkey=$(sed -n '1p' "$key_path")
             ;;
         *)
             log_error "Неверный выбор"
             return 1
             ;;
     esac
-    
-    # Проверяем формат ключа
-    if [[ ! "$public_key_content" =~ ^ssh-[a-z0-9]+ ]]; then
-        log_error "Неверный формат SSH ключа"
+
+    if [[ -z "$pubkey" ]] || [[ ! "$pubkey" =~ ^ssh- ]]; then
+        log_error "Некорректный публичный ключ"
         return 1
     fi
-    
-    # Создаем директорию .ssh
-    mkdir -p "$AUTHORIZED_KEYS_DIR"
-    chmod 700 "$AUTHORIZED_KEYS_DIR"
-    
-    # Добавляем ключ в authorized_keys
-    local authorized_keys_file="${AUTHORIZED_KEYS_DIR}/authorized_keys"
-    
-    # Проверяем, не добавлен ли уже этот ключ
-    if [[ -f "$authorized_keys_file" ]] && grep -Fq "$public_key_content" "$authorized_keys_file"; then
-        log_info "Ключ уже добавлен в authorized_keys"
+
+    touch "$auth_file"
+    chmod 600 "$auth_file"
+
+    if grep -Fxq "$pubkey" "$auth_file"; then
+        log_warning "Такой ключ уже присутствует в authorized_keys"
         return 0
     fi
-    
-    # Добавляем ключ
-    echo "$public_key_content" >> "$authorized_keys_file"
-    chmod 600 "$authorized_keys_file"
-    
-    log_success "SSH ключ добавлен в authorized_keys"
-    log_info "Теперь можно подключаться по SSH ключу"
-    
-    return 0
+
+    echo "$pubkey" >> "$auth_file"
+    log_success "Ключ добавлен в $auth_file"
 }
 
-# === ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ БЕЗОПАСНОСТИ ===
+# Список ключей в authorized_keys
+list_authorized_keys() {
+    clear
+    log_info "📋 Список ключей в /root/.ssh/authorized_keys"
+    echo "════════════════════════════════════════"
+    local auth_file="/root/.ssh/authorized_keys"
+    if [[ -s "$auth_file" ]]; then
+        nl -ba "$auth_file"
+    else
+        echo "Нет ключей"
+    fi
+    echo "════════════════════════════════════════"
+}
 
-# Настройка дополнительных параметров безопасности
-configure_additional_security() {
-    log_info "🛡️ Настройка дополнительных параметров безопасности SSH..."
-    
-    # Создаем резервную копию
-    if ! backup_ssh_config >/dev/null; then
+# Удаление ключа по номеру строки
+remove_authorized_key() {
+    clear
+    local auth_file="/root/.ssh/authorized_keys"
+    if [[ ! -s "$auth_file" ]]; then
+        log_warning "authorized_keys не найден или пуст"
+        return 0
+    fi
+    list_authorized_keys
+    read -p "Введите номер ключа для удаления: " -r line_no
+    if [[ ! "$line_no" =~ ^[0-9]+$ ]]; then
+        log_error "Неверный ввод"
         return 1
     fi
-    
-    local changes_made=false
-    
-    # Ограничение попыток авторизации
-    if modify_ssh_parameter "MaxAuthTries" "3" "Limit authentication attempts"; then
-        changes_made=true
+    local total
+    total=$(wc -l < "$auth_file")
+    if (( line_no < 1 || line_no > total )); then
+        log_error "Номер вне диапазона (1-$total)"
+        return 1
     fi
-    
-    # Таймаут неактивности
-    if modify_ssh_parameter "ClientAliveInterval" "300" "Client timeout (5 minutes)"; then
-        changes_made=true
-    fi
-    
-    # Максимальное количество неактивных сессий
-    if modify_ssh_parameter "ClientAliveCountMax" "2" "Max inactive sessions"; then
-        changes_made=true
-    fi
-    
-    # Отключение X11 forwarding
-    if modify_ssh_parameter "X11Forwarding" "no" "Disable X11 forwarding for security"; then
-        changes_made=true
-    fi
-    
-    # Отключение forwarding для агента
-    if modify_ssh_parameter "AllowAgentForwarding" "no" "Disable agent forwarding for security"; then
-        changes_made=true
-    fi
-    
-    if [[ "$changes_made" == true ]]; then
-        log_success "Дополнительные параметры безопасности настроены"
-    else
-        log_warning "Не удалось применить некоторые настройки безопасности"
-    fi
+    backup_file="${auth_file}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$auth_file" "$backup_file"
+    sed -i "${line_no}d" "$auth_file"
+    log_success "Ключ №$line_no удалён (резервная копия: $backup_file)"
 }
 
-# === ГЛАВНАЯ ФУНКЦИЯ МОДУЛЯ ===
+# Показать текущие настройки SSH
+show_ssh_status() {
+    clear
+    log_info "📋 Текущие настройки SSH"
+    echo "════════════════════════════════════════"
+    
+    local port
+    local password_auth
+    local root_login
+    
+    port=$(grep "^Port" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "22 (default)")
+    password_auth=$(grep "^PasswordAuthentication" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "yes (default)")
+    root_login=$(grep "^PermitRootLogin" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "yes (default)")
+    
+    echo "SSH Port: $port"
+    echo "Password Authentication: $password_auth"
+    echo "Root Login: $root_login"
+    echo "SSH Service: $(systemctl is-active ssh 2>/dev/null)"
+    
+    if [[ -f /root/.ssh/authorized_keys ]]; then
+        local key_count
+        key_count=$(grep -c "^ssh-" /root/.ssh/authorized_keys 2>/dev/null || echo "0")
+        echo "Authorized Keys: $key_count"
+    else
+        echo "Authorized Keys: none"
+    fi
+    
+    # UFW статус для SSH
+    if command -v ufw &>/dev/null; then
+        echo "UFW Status: $(ufw status | head -1)"
+        if ufw status | grep -q "Status: active"; then
+            local ssh_rules
+            ssh_rules=$(ufw status | grep -E "^$port|^22" | grep -c "tcp" || echo "0")
+            echo "UFW SSH Rules: $ssh_rules active"
+        fi
+    else
+        echo "UFW: not installed"
+    fi
+    
+    echo "════════════════════════════════════════"
+}
 
-# Главная функция SSH Security модуля
-configure_ssh_security() {
-    log_info "🔐 Запуск модуля SSH Security..."
+# Перезапуск SSH
+restart_ssh() {
+    clear
+    log_info "🔄 Перезапуск SSH службы"
     echo
     
-    # Проверяем права root
-    if [[ $EUID -ne 0 ]]; then
-        log_error "SSH Security модуль требует права root"
+    # Проверяем конфигурацию
+    if ! sshd -t 2>/dev/null; then
+        log_error "Ошибки в SSH конфигурации:"
+        sshd -t
         return 1
     fi
     
-    # Проверяем наличие SSH
-    if ! systemctl list-unit-files | grep -q "^$SSH_SERVICE"; then
-        log_error "SSH сервис не найден в системе"
-        return 1
-    fi
+    read -p "Перезапустить SSH службу? (y/N): " -n 1 -r
+    echo
     
-    # Меню модуля
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if systemctl restart ssh; then
+            log_success "SSH служба перезапущена"
+        else
+            log_error "Ошибка перезапуска SSH"
+        fi
+    fi
+}
+
+# Главное меню SSH модуля
+configure_ssh_security() {
     while true; do
+        clear
+        echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║          SSH Security Menu           ║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
         echo
-        echo "=== SSH Security Configuration ==="
-        echo "1. 🔧 Изменить SSH порт"
+        echo "1. 🔧 Изменить SSH порт (+ автообновление UFW)"
         echo "2. 🔑 Генерировать SSH ключи"
-        echo "3. 📥 Установить SSH ключ для авторизации"
-        echo "4. 🔒 Отключить парольную авторизацию"
-        echo "5. 🚫 Отключить прямой вход под root"
-        echo "6. 🛡️ Настроить дополнительную безопасность"
-        echo "7. 🔄 Перезапустить SSH сервис"
-        echo "8. ℹ️  Показать текущие настройки SSH"
-        echo "9. 🚀 Полная настройка SSH безопасности"
-        echo "0. ⬅️ Вернуться в главное меню"
+        echo "3. 📥 Импортировать публичный ключ в authorized_keys"
+        echo "4. 📋 Показать текущие настройки"
+        echo "5. 🔒 Отключить парольную авторизацию"
+        echo "6. 🚫 Отключить root SSH вход"
+        echo "7. 📜 Показать authorized_keys"
+        echo "8. 🗑️  Удалить ключ из authorized_keys"
+        echo "9. 🔄 Перезапустить SSH службу"
+        echo "0. ⬅️  Назад в главное меню"
         echo
         read -p "Выберите действие [0-9]: " -n 1 -r choice
-        echo
         echo
         
         case $choice in
             1) change_ssh_port ;;
             2) generate_ssh_key ;;
-            3) install_ssh_key ;;
-            4) disable_password_auth ;;
-            5) disable_root_login ;;
-            6) configure_additional_security ;;
-            7) restart_ssh_service ;;
-            8) show_current_ssh_config ;;
-            9) full_ssh_security_setup ;;
+            3) install_public_key ;;
+            4) show_ssh_status ;;
+            5) disable_password_auth ;;
+            6) disable_root_login ;;
+            7) list_authorized_keys ;;
+            8) remove_authorized_key ;;
+            9) restart_ssh ;;
             0) return 0 ;;
-            *) log_error "Неверный выбор: '$choice'" ;;
+            *) 
+                log_error "Неверный выбор"
+                sleep 1
+                ;;
         esac
         
         if [[ "$choice" != "0" ]]; then
             echo
-            echo -e "${YELLOW}Нажмите Enter для продолжения...${NC}"
-            read -r
+            read -p "Нажмите Enter для продолжения..." -r
         fi
     done
 }
-
-# Показ текущих настроек SSH
-show_current_ssh_config() {
-    log_info "📋 Текущие настройки SSH:"
-    echo "═══════════════════════════════════════════════════"
-    
-    local port=$(grep "^Port" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "22 (default)")
-    local password_auth=$(grep "^PasswordAuthentication" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "yes (default)")
-    local root_login=$(grep "^PermitRootLogin" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "yes (default)")
-    local max_auth=$(grep "^MaxAuthTries" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "6 (default)")
-    
-    echo "SSH Port: $port"
-    echo "Password Authentication: $password_auth"
-    echo "Root Login: $root_login"
-    echo "Max Auth Tries: $max_auth"
-    echo "SSH Service Status: $(systemctl is-active $SSH_SERVICE 2>/dev/null || echo "unknown")"
-    
-    if [[ -f "${AUTHORIZED_KEYS_DIR}/authorized_keys" ]]; then
-        local key_count=$(grep -c "^ssh-" "${AUTHORIZED_KEYS_DIR}/authorized_keys" 2>/dev/null || echo "0")
-        echo "Authorized Keys: $key_count ключей"
-    else
-        echo "Authorized Keys: файл не найден"
-    fi
-    
-    echo "═══════════════════════════════════════════════════"
-}
-
-# Полная настройка SSH безопасности
-full_ssh_security_setup() {
-    log_info "🚀 Запуск полной настройки SSH безопасности..."
-    
-    log_warning "Эта операция выполнит следующие действия:"
-    echo "  1. Генерация SSH ключей"
-    echo "  2. Установка ключей для авторизации"
-    echo "  3. Изменение SSH порта"
-    echo "  4. Отключение парольной авторизации"
-    echo "  5. Отключение root входа"
-    echo "  6. Настройка дополнительной безопасности"
-    echo "  7. Перезапуск SSH сервиса"
-    echo
-    
-    read -p "Продолжить полную настройку? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Полная настройка отменена"
-        return 0
-    fi
-    
-    # Выполняем настройку по порядку
-    log_info "Шаг 1/7: Генерация SSH ключей..."
-    generate_ssh_key
-    
-    log_info "Шаг 2/7: Установка SSH ключей..."
-    install_ssh_key
-    
-    log_info "Шаг 3/7: Изменение SSH порта..."
-    change_ssh_port
-    
-    log_info "Шаг 4/7: Настройка дополнительной безопасности..."
-    configure_additional_security
-    
-    log_info "Шаг 5/7: Отключение парольной авторизации..."
-    disable_password_auth
-    
-    log_info "Шаг 6/7: Отключение root входа..."
-    disable_root_login
-    
-    log_info "Шаг 7/7: Перезапуск SSH сервиса..."
-    if restart_ssh_service; then
-        echo
-        log_success "🎉 Полная настройка SSH безопасности завершена!"
-        
-        echo
-        log_warning "КРИТИЧЕСКИ ВАЖНЫЕ НАПОМИНАНИЯ:"
-        echo "  ✓ Проверьте SSH доступ в новой сессии"
-        echo "  ✓ Не закрывайте текущую сессию до проверки"
-        echo "  ✓ Обновите клиенты SSH с новым портом"
-        echo "  ✓ Настройте файрвол для нового SSH порта"
-        echo
-    else
-        log_error "Ошибка при перезапуске SSH. Проверьте конфигурацию!"
-    fi
-}
-
-log_success "SSH Security Module загружен успешно"

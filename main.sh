@@ -16,7 +16,8 @@ readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
 
 # Директории проекта - исправляем SC2155
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
 readonly MODULES_DIR="${SCRIPT_DIR}/modules"
 readonly LOGS_DIR="${SCRIPT_DIR}/logs"
 
@@ -24,7 +25,8 @@ readonly LOGS_DIR="${SCRIPT_DIR}/logs"
 mkdir -p "$LOGS_DIR"
 
 # Файл логов - исправляем SC2155  
-readonly LOG_FILE="${LOGS_DIR}/security-$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="${LOGS_DIR}/security-$(date +%Y%m%d_%H%M%S).log"
+readonly LOG_FILE
 
 # Функции логирования
 log_info() {
@@ -176,27 +178,118 @@ view_logs() {
     fi
 }
 
+# Загрузка конфигурации по умолчанию
+load_default_config() {
+    local config_file="${SCRIPT_DIR}/configs/defaults.env"
+    if [[ -f "$config_file" ]]; then
+        # shellcheck source=/dev/null
+        source "$config_file"
+        log_info "Загружена конфигурация: $config_file"
+        return 0
+    else
+        log_warning "Файл конфигурации не найден: $config_file"
+        return 1
+    fi
+}
+
 # Полная настройка безопасности
 full_security_setup() {
     show_header
     log_warning "🚀 Полная настройка безопасности"
     echo
-    echo "Это действие выполнит:"
-    echo "  1. Настройку SSH безопасности"
-    echo "  2. Конфигурацию файрвола"
-    echo "  3. Укрепление системы"
+    
+    # Пытаемся загрузить конфигурацию
+    local use_config=false
+    if load_default_config; then
+        echo "📋 Найден файл конфигурации configs/defaults.env"
+        echo
+        read -p "Использовать автоматические настройки из конфигурации? (Y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            use_config=false
+            log_info "Будет использован интерактивный режим"
+        else
+            use_config=true
+            log_info "Будут применены настройки из конфигурации"
+        fi
+    else
+        log_info "Будет использован интерактивный режим"
+    fi
+    
     echo
-    read -p "Продолжить? (y/N): " -n 1 -r
+    echo "Это действие выполнит:"
+    echo "  1. 🔐 Настройку SSH безопасности"
+    echo "  2. 🛡️ Конфигурацию файрвола"  
+    echo "  3. 🔧 Укрепление системы"
+    if [[ "$use_config" == "true" ]]; then
+        echo "  📋 Согласно настройкам в configs/defaults.env"
+    fi
+    echo
+    read -p "Продолжить полную настройку? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         return 0
     fi
     
+    if [[ "$use_config" == "true" ]]; then
+        full_security_setup_automated
+    else
+        full_security_setup_interactive
+    fi
+    
+    log_success "🎉 Полная настройка завершена!"
+}
+
+# Автоматизированная настройка с использованием конфигурации
+full_security_setup_automated() {
+    log_info "🤖 Запуск автоматизированной настройки..."
+    
+    # SSH настройки
+    if [[ "${SETUP_BASIC_FIREWALL:-true}" == "true" ]]; then
+        log_info "Настройка базового файрвола..."
+        setup_basic_firewall
+    fi
+    
+    # System Hardening
+    if [[ "${INSTALL_FAIL2BAN:-true}" == "true" ]]; then
+        log_info "Установка fail2ban..."
+        install_fail2ban
+    fi
+    
+    if [[ "${CONFIGURE_FAIL2BAN_BASIC:-true}" == "true" ]]; then
+        log_info "Базовая конфигурация fail2ban..."
+        configure_fail2ban_basic
+    fi
+    
+    if [[ "${INSTALL_UNATTENDED_UPGRADES:-true}" == "true" ]]; then
+        log_info "Установка автоматических обновлений..."
+        install_unattended_upgrades
+    fi
+    
+    if [[ "${INSTALL_CROWDSEC:-false}" == "true" ]]; then
+        log_info "Установка CrowdSec..."
+        install_crowdsec
+    fi
+    
+    if [[ "${INSTALL_CROWDSEC_BOUNCER:-false}" == "true" ]]; then
+        log_info "Установка CrowdSec Bouncer..."
+        install_crowdsec_bouncer
+    fi
+    
+    log_warning "⚠️  SSH настройки требуют ручной настройки для безопасности"
+    log_info "Используйте меню 'SSH Security' для:"
+    log_info "  - Импорта SSH ключей"
+    log_info "  - Смены SSH порта"
+    log_info "  - Отключения парольной авторизации"
+}
+
+# Интерактивная настройка
+full_security_setup_interactive() {
+    log_info "🎯 Запуск интерактивной настройки..."
+    
     configure_ssh_security
     configure_firewall  
     system_hardening
-    
-    log_success "🎉 Полная настройка завершена!"
 }
 
 # Главная функция

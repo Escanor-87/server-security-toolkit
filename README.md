@@ -11,6 +11,7 @@
 - 📊 **Comprehensive Logging**: Подробное логирование всех операций
 - 🧪 **Safe Testing Mode**: Безопасное тестирование без изменения системы
 - 🔄 **Rollback Support**: Автоматическое создание резервных копий конфигураций
+ - 🧱 **CrowdSec (опционально)**: Установка ядра и firewall-bouncer
 
 ## 🏗️ Архитектура проекта
 
@@ -34,24 +35,34 @@ text
 
 ## 🚀 Быстрый старт
 
-### Установка на сервер
+### 🎯 Однострочная установка (рекомендуется)
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/Escanor-87/server-security-toolkit/main/install.sh)
+```
+
+После установки запуск:
+```bash
+sudo security-toolkit
+```
+
+### 📦 Ручная установка
 
 1. Клонирование репозитория
+```bash
 git clone https://github.com/Escanor-87/server-security-toolkit.git
 cd server-security-toolkit
+```
 
 2. Настройка прав доступа
+```bash
 chmod +x main.sh modules/*.sh
+```
 
-3. Запуск в тестовом режиме (безопасно)
+3. Запуск
+```bash
 sudo ./main.sh
-
-Выберите опцию 8 - "Test Mode"
-4. Основная настройка (после тестирования)
-sudo ./main.sh
-
-Выберите нужные модули
-text
+```
 
 ### Рекомендуемый порядок настройки
 
@@ -89,12 +100,13 @@ sudo ./main.sh
 
 Выберите опцию 1
 Доступные функции:
-🔧 Смена SSH порта (с проверкой доступности)
+🔧 Смена SSH порта (с автообновлением UFW)
 🔑 Генерация RSA/Ed25519 ключей
-📥 Импорт и установка существующих ключей
-🔒 Отключение парольной авторизации
-🚫 Отключение root доступа
-🛡️ Дополнительные настройки безопасности
+📥 Импорт публичного ключа в authorized_keys
+📜 Просмотр и 🗑️ удаление ключей из authorized_keys
+🔒 Отключение парольной авторизации (идемпотентно)
+🚫 Отключение root входа (PermitRootLogin no)
+🛡️ Доп. проверки и безопасный перезапуск sshd
 text
 
 ### Firewall Module
@@ -119,8 +131,28 @@ sudo ./main.sh → SSH Security → Generate SSH Key
 scp root@server1:/root/server-security-toolkit/keys/server_security_key ~/.ssh/
 
 3. На остальных серверах импортируем публичный ключ
-sudo ./main.sh → SSH Security → Install SSH Key → Import existing key
+sudo ./main.sh → SSH Security → Import public key → вставить/указать .pub
 
+### System Hardening Module
+
+Укрепление системы безопасности
+sudo ./main.sh
+
+Выберите опцию 3
+Доступные функции:
+🔧 Установка и настройка fail2ban
+🔄 Настройка автоматических обновлений (unattended-upgrades)
+text
+
+### CrowdSec Module (optional)
+
+Установка CrowdSec ядра и firewall-bouncer
+sudo ./main.sh
+
+Выберите опцию 4
+Доступные функции:
+🔧 Установка CrowdSec ядра
+🔄 Установка firewall-bouncer
 text
 
 ## 🔍 Логирование и мониторинг
@@ -193,11 +225,12 @@ text
 - [x] Логирование и безопасное тестирование
 
 ### Фаза 2 - Расширенный функционал (🚧 В разработке)
-- [ ] Полная реализация SSH Security функций
+- [x] Полная реализация SSH Security функций (импорт/список/удаление ключей, запрет root)
 - [ ] Продвинутые правила файрвола
-- [ ] Автоматические обновления системы
-- [ ] Интеграция fail2ban
+- [x] Автоматические обновления системы (unattended-upgrades)
+- [x] Базовая конфигурация fail2ban (sshd jail)
 - [ ] Мониторинг и алерты
+- [x] Опциональная интеграция CrowdSec и Firewall Bouncer
 
 ### Фаза 3 - Автоматизация (📋 Планируется)
 - [ ] Multi-server deployment
