@@ -51,7 +51,7 @@ show_header() {
     echo -e "${BLUE}"
     echo "╔══════════════════════════════════════════════════╗"
     echo "║         Server Security Toolkit v${VERSION}         ║"
-    echo "║          Ubuntu Server Hardening Script          ║"
+    echo "║       Ubuntu/Debian Server Hardening Script      ║"
     echo "╚══════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo
@@ -59,11 +59,13 @@ show_header() {
 
 # Проверка прав root
 check_root() {
+    log_info "Проверка прав root..."
     if [[ $EUID -ne 0 ]]; then
         log_error "Этот скрипт должен запускаться с правами root"
         log_info "Запустите: sudo bash $0"
         exit 1
     fi
+    log_success "Права root подтверждены"
 }
 
 # Проверка операционной системы - исправляем SC1091
@@ -109,12 +111,16 @@ check_os() {
 
 # Проверка системных требований
 check_requirements() {
+    log_info "Проверка системных требований..."
     local missing_tools=()
     local required_tools=("ssh" "systemctl" "sed" "grep" "awk")
     
     for tool in "${required_tools[@]}"; do
         if ! command -v "$tool" &> /dev/null; then
             missing_tools+=("$tool")
+            log_warning "Инструмент не найден: $tool"
+        else
+            log_info "Инструмент найден: $tool"
         fi
     done
     
@@ -122,16 +128,38 @@ check_requirements() {
         log_error "Отсутствуют необходимые инструменты: ${missing_tools[*]}"
         exit 1
     fi
+    
+    log_success "Все системные требования выполнены"
 }
 
 # Загрузка модулей
 load_modules() {
+    log_info "Загрузка модулей из $MODULES_DIR"
+    local loaded_count=0
+    
     for module in "${MODULES_DIR}"/*.sh; do
         if [[ -f "$module" ]]; then
+            local module_name
+            module_name=$(basename "$module")
+            log_info "Загружаем модуль: $module_name"
+            
             # shellcheck source=/dev/null
-            source "$module"
+            if source "$module"; then
+                log_success "Модуль $module_name загружен успешно"
+                ((loaded_count++))
+            else
+                log_error "Ошибка загрузки модуля: $module_name"
+                return 1
+            fi
         fi
     done
+    
+    if [[ $loaded_count -eq 0 ]]; then
+        log_error "Не найдено ни одного модуля в $MODULES_DIR"
+        return 1
+    fi
+    
+    log_success "Загружено модулей: $loaded_count"
 }
 
 # Главное меню
@@ -313,13 +341,22 @@ full_security_setup_interactive() {
 
 # Главная функция
 main() {
+    log_info "🚀 Запуск Server Security Toolkit v$VERSION"
+    log_info "Рабочая директория: $SCRIPT_DIR"
+    log_info "Файл логов: $LOG_FILE"
+    
     # Проверки
+    log_info "Выполнение предварительных проверок..."
     check_root
     check_os
     check_requirements
     
     # Загружаем модули
-    load_modules
+    log_info "Загрузка модулей..."
+    if ! load_modules; then
+        log_error "Критическая ошибка: не удалось загрузить модули"
+        exit 1
+    fi
     
     # Главный цикл
     while true; do
@@ -328,12 +365,46 @@ main() {
         echo
         
         case $choice in
-            1) configure_ssh_security ;;
-            2) configure_firewall ;;
-            3) system_hardening ;;
-            4) full_security_setup ;;
-            5) show_system_info ;;
-            6) view_logs ;;
+            1) 
+                log_info "Пользователь выбрал: SSH Security"
+                if declare -f configure_ssh_security &>/dev/null; then
+                    configure_ssh_security
+                else
+                    log_error "Функция configure_ssh_security не найдена"
+                fi
+                ;;
+            2) 
+                log_info "Пользователь выбрал: Firewall Setup"
+                if declare -f configure_firewall &>/dev/null; then
+                    configure_firewall
+                else
+                    log_error "Функция configure_firewall не найдена"
+                fi
+                ;;
+            3) 
+                log_info "Пользователь выбрал: System Hardening"
+                if declare -f system_hardening &>/dev/null; then
+                    system_hardening
+                else
+                    log_error "Функция system_hardening не найдена"
+                fi
+                ;;
+            4) 
+                log_info "Пользователь выбрал: Full Security Setup"
+                if declare -f full_security_setup &>/dev/null; then
+                    full_security_setup
+                else
+                    log_error "Функция full_security_setup не найдена"
+                fi
+                ;;
+            5) 
+                log_info "Пользователь выбрал: System Information"
+                show_system_info 
+                ;;
+            6) 
+                log_info "Пользователь выбрал: View Logs"
+                view_logs 
+                ;;
             0) 
                 log_info "До свидания! 👋"
                 exit 0

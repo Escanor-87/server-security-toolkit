@@ -6,7 +6,7 @@
 # Проверка загрузки модуля
 if [[ -z "${SCRIPT_DIR:-}" ]]; then
     echo "ERROR: Key Management Module должен загружаться из main.sh"
-    exit 1
+    return 1 2>/dev/null || exit 1
 fi
 
 # Главная функция модуля
