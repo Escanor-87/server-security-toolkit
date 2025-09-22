@@ -694,6 +694,43 @@ restart_ssh() {
     fi
 }
 
+# Объединенное управление SSH ключами
+ssh_key_management() {
+    while true; do
+        clear
+        echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║        Управление SSH ключами        ║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+        echo
+        
+        echo "Выберите действие:"
+        echo "1. 🔑 Генерировать новые SSH ключи"
+        echo "2. 📥 Импортировать публичный ключ"
+        echo "3. 📜 Управление authorized_keys (просмотр/копирование/удаление)"
+        echo "0. 🔙 Назад в SSH меню"
+        echo
+        read -p "Выберите действие [0-3]: " -n 1 -r key_choice
+        echo
+        
+        case $key_choice in
+            1) generate_ssh_key ;;
+            2) install_public_key ;;
+            3) manage_authorized_keys ;;
+            0) return 0 ;;
+            *)
+                log_error "Неверный выбор: '$key_choice'"
+                sleep 1
+                continue
+                ;;
+        esac
+        
+        if [[ "$key_choice" != "0" ]]; then
+            echo
+            read -p "Нажмите Enter для продолжения..." -r
+        fi
+    done
+}
+
 # Восстановление из резервной копии
 restore_from_backup() {
     while true; do
@@ -934,29 +971,25 @@ configure_ssh_security() {
         echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
         echo
         echo "1. 🔧 Изменить SSH порт (+ автообновление UFW)"
-        echo "2. 🔑 Генерировать SSH ключи"
-        echo "3. 📥 Импортировать публичный ключ в authorized_keys"
-        echo "4. 📋 Показать текущие настройки"
-        echo "5. 🔒 Отключить парольную авторизацию"
-        echo "6. 🚫 Отключить root SSH вход"
-        echo "7. 📜 Управление authorized_keys (просмотр/копирование/удаление)"
-        echo "8. 🔄 Перезапустить SSH службу"
-        echo "9. 🔙 Восстановить из резервной копии"
+        echo "2. 🔑 Управление SSH ключами (генерация/импорт/просмотр/удаление)"
+        echo "3. 📋 Показать текущие настройки"
+        echo "4. 🔒 Отключить парольную авторизацию"
+        echo "5. 🚫 Отключить root SSH вход"
+        echo "6. 🔄 Перезапустить SSH службу"
+        echo "7. 🔙 Восстановить из резервной копии"
         echo "0. ⬅️  Назад в главное меню"
         echo
-        read -p "Выберите действие [0-9]: " -n 1 -r choice
+        read -p "Выберите действие [0-7]: " -n 1 -r choice
         echo
         
         case $choice in
             1) change_ssh_port ;;
-            2) generate_ssh_key ;;
-            3) install_public_key ;;
-            4) show_ssh_status ;;
-            5) disable_password_auth ;;
-            6) disable_root_login ;;
-            7) manage_authorized_keys ;;
-            8) restart_ssh ;;
-            9) restore_from_backup ;;
+            2) ssh_key_management ;;
+            3) show_ssh_status ;;
+            4) disable_password_auth ;;
+            5) disable_root_login ;;
+            6) restart_ssh ;;
+            7) restore_from_backup ;;
             0) return 0 ;;
             *)
                 log_error "Неверный выбор: '$choice'"
