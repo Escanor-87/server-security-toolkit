@@ -225,6 +225,9 @@ delete_firewall_rule() {
     echo "════════════════════════════════════════"
     ufw status numbered
     echo "════════════════════════════════════════"
+
+    echo
+    read -p "Нажмите Enter для возврата в меню файрвола..." -r
 }
 add_firewall_rule() {
     clear
@@ -318,7 +321,8 @@ configure_firewall() {
             1) install_ufw ;;
             2) setup_basic_firewall ;;
             3) add_firewall_rule ;;
-            4) delete_firewall_rule ;;
+            4) delete_firewall_rule 
+               continue ;;  # delete_firewall_rule имеет свой read, пропускаем общий
             5) show_firewall_status ;;
             6) restore_firewall_backup ;;
             0) return 0 ;;
@@ -328,7 +332,7 @@ configure_firewall() {
                 ;;
         esac
         
-        if [[ "$choice" != "0" ]]; then
+        if [[ "$choice" != "0" && "$choice" != "4" ]]; then
             echo
             read -p "Нажмите Enter для продолжения..." -r
         fi
