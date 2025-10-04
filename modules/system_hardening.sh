@@ -69,10 +69,17 @@ configure_fail2ban_basic() {
     else
         ssh_port="ssh"
     fi
-    
+    # Определяем тип логирования: файл или только journald
+    local has_auth_log="no"
+    if [[ -f "/var/log/auth.log" ]] || grep -qi "debian\|ubuntu" /etc/os-release 2>/dev/null && [[ -n "$(awk -F= '/^ForwardToSyslog/{print $2}' /etc/systemd/journald.conf 2>/dev/null)" ]]; then
+        # если присутствует файл журнала аутентификации — используем его
+        has_auth_log="yes"
+    fi
+
     local jail_conf="/etc/fail2ban/jail.local"
     if [[ ! -f "$jail_conf" ]]; then
-        cat > "$jail_conf" <<EOF
+        if [[ "$has_auth_log" == "yes" ]]; then
+            cat > "$jail_conf" <<EOF
 [DEFAULT]
 bantime = 1h
 findtime = 10m
@@ -82,25 +89,83 @@ maxretry = 5
 enabled = true
 port = $ssh_port
 logpath = %(sshd_log)s
-backend = systemd
+backend = auto
 EOF
-        log_success "Создан $jail_conf с базовыми настройками"
+        else
+            cat > "$jail_conf" <<EOF
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+port = $ssh_port
+backend = systemd
+# Используем системный журнал (journald). journalmatch уточняет поток для sshd
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
+EOF
+        fi
+        log_success "Создан $jail_conf с базовыми настройками (has_auth_log=$has_auth_log)"
     else
         # Идемпотентно гарантируем enabled=true для sshd и обновляем порт
         if grep -q "^\[sshd\]" "$jail_conf"; then
             sed -i '/^\[sshd\]/,/^\[/{s/^enabled.*/enabled = true/}' "$jail_conf"
             sed -i '/^\[sshd\]/,/^\[/{s/^port.*/port = '"$ssh_port"'/}' "$jail_conf"
+            if [[ "$has_auth_log" == "yes" ]]; then
+                # Убедимся, что задан logpath и корректный backend для файловых логов
+                if grep -q "^logpath" "$jail_conf"; then
+                    sed -i '/^\[sshd\]/,/^\[/{s/^logpath.*/logpath = %(sshd_log)s/}' "$jail_conf"
+                else
+                    sed -i '/^\[sshd\]/,/^\[/{/enabled = true/a logpath = %(sshd_log)s
+}' "$jail_conf"
+                fi
+                if grep -q "^backend" "$jail_conf"; then
+                    sed -i '/^\[sshd\]/,/^\[/{s/^backend.*/backend = auto/}' "$jail_conf"
+                else
+                    sed -i '/^\[sshd\]/,/^\[/{/enabled = true/a backend = auto
+}' "$jail_conf"
+                fi
+                # Удаляем journalmatch, если он был задан ранее
+                sed -i '/^\[sshd\]/,/^\[/{/^[[:space:]]*journalmatch/d}' "$jail_conf"
+            else
+                # Журналы только в systemd: удаляем logpath, выставляем backend=systemd и добавляем journalmatch
+                sed -i '/^\[sshd\]/,/^\[/{/^[[:space:]]*logpath/d}' "$jail_conf"
+                if grep -q "^backend" "$jail_conf"; then
+                    sed -i '/^\[sshd\]/,/^\[/{s/^backend.*/backend = systemd/}' "$jail_conf"
+                else
+                    sed -i '/^\[sshd\]/,/^\[/{/enabled = true/a backend = systemd
+}' "$jail_conf"
+                fi
+                if grep -q "journalmatch" "$jail_conf"; then
+                    sed -i '/^\[sshd\]/,/^\[/{s/^journalmatch.*/journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd/}' "$jail_conf"
+                else
+                    sed -i '/^\[sshd\]/,/^\[/{/backend = systemd/a journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
+}' "$jail_conf"
+                fi
+            fi
         else
-            cat >> "$jail_conf" <<EOF
+            if [[ "$has_auth_log" == "yes" ]]; then
+                cat >> "$jail_conf" <<EOF
 
 [sshd]
 enabled = true
 port = $ssh_port
 logpath = %(sshd_log)s
-backend = systemd
+backend = auto
 EOF
+            else
+                cat >> "$jail_conf" <<EOF
+
+[sshd]
+enabled = true
+port = $ssh_port
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
+EOF
+            fi
         fi
-        log_success "Обновлен $jail_conf (sshd enabled, port: $ssh_port)"
+        log_success "Обновлен $jail_conf (sshd enabled, port: $ssh_port, has_auth_log=$has_auth_log)"
     fi
     systemctl restart fail2ban || true
     sleep 1

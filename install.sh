@@ -86,24 +86,28 @@ install_dependencies() {
 clone_repository() {
     log_info "Клонирование Server Security Toolkit..."
     
-    # Удаляем старую установку если есть
+    # Проверяем существующую установку
     if [[ -d "$INSTALL_DIR" ]]; then
         log_warning "Найдена существующая установка в $INSTALL_DIR"
-        read -p "Удалить и переустановить? (y/N): " -n 1 -r
+        read -p "Обновить установку? (y/N): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             rm -rf "$INSTALL_DIR"
-            log_info "Старая установка удалена"
+            log_info "Старая установка удалена для обновления"
+            # Клонируем репозиторий
+            git clone "$REPO_URL" "$INSTALL_DIR"
+            log_success "Репозиторий обновлен в $INSTALL_DIR"
         else
-            log_info "Установка прервана"
-            exit 1
+            log_info "Используем существующую установку"
+            # Запускаем существующую версию
+            log_success "Запуск установленной версии Security Toolkit..."
+            exec "$INSTALL_DIR/main.sh"
         fi
+    else
+        # Клонируем репозиторий (новая установка)
+        git clone "$REPO_URL" "$INSTALL_DIR"
+        log_success "Репозиторий склонирован в $INSTALL_DIR"
     fi
-    
-    # Клонируем репозиторий
-    git clone "$REPO_URL" "$INSTALL_DIR"
-    
-    log_success "Репозиторий склонирован в $INSTALL_DIR"
 }
 
 # Настройка прав доступа
@@ -113,14 +117,20 @@ setup_permissions() {
     cd "$INSTALL_DIR"
     chmod +x main.sh modules/*.sh tests/*.sh
     
+    # Удаляем старый алиас ss если существует
+    if [[ -L "/usr/local/bin/ss" ]] || [[ -f "/usr/local/bin/ss" ]]; then
+        rm "/usr/local/bin/ss"
+        log_info "Удален старый алиас ss"
+    fi
+    
     # Создаем символическую ссылку для удобства
     if [[ -L "$SYMLINK_PATH" ]] || [[ -f "$SYMLINK_PATH" ]]; then
         rm "$SYMLINK_PATH"
     fi
     ln -s "$INSTALL_DIR/main.sh" "$SYMLINK_PATH"
     
-    # Создаем короткий алиас ss
-    local short_alias="/usr/local/bin/ss"
+    # Создаем короткий алиас sst
+    local short_alias="/usr/local/bin/sst"
     if [[ -L "$short_alias" ]] || [[ -f "$short_alias" ]]; then
         rm "$short_alias"
     fi
@@ -134,9 +144,9 @@ setup_permissions() {
     fi
     
     if [[ -L "$short_alias" ]] && [[ -f "$(readlink -f "$short_alias")" ]]; then
-        log_success "Короткий алиас ss создан и проверен"
+        log_success "Короткий алиас sst создан и проверен"
     else
-        log_warning "Проблема с алиасом ss"
+        log_warning "Проблема с алиасом sst"
     fi
     
     # Создаем алиасы для fail2ban
@@ -256,10 +266,10 @@ show_installation_info() {
     log_success "🎉 Server Security Toolkit успешно установлен!"
     echo
     echo "📍 Расположение: $INSTALL_DIR"
-    echo "🔗 Команды: ss | security-toolkit | f2b"
+    echo "🔗 Команды: sst | security-toolkit | f2b"
     echo
     echo "🚀 Быстрый старт:"
-    echo "   sudo ss              # Security Toolkit"
+    echo "   sudo sst             # Security Toolkit"
     echo "   f2b list             # fail2ban статус"
     echo "   f2b help             # fail2ban команды"
     echo "   sudo security-toolkit"
