@@ -87,7 +87,125 @@ show_firewall_status() {
     echo "════════════════════════════════════════"
 }
 
-# Добавить правило
+# Удалить правило
+delete_firewall_rule() {
+    clear
+    log_info "🗑️ Удаление правила файрвола"
+    echo
+
+    if ! command -v ufw &>/dev/null; then
+        log_error "UFW не установлен"
+        return 1
+    fi
+
+    echo -e "${BLUE}Текущие правила UFW:${NC}"
+    echo "════════════════════════════════════════"
+    ufw status numbered 2>/dev/null || echo "UFW неактивен"
+    echo "════════════════════════════════════════"
+    echo
+
+    # Получаем список правил с номерами
+    local rules_output
+    rules_output=$(ufw status numbered 2>/dev/null)
+
+    if [[ -z "$rules_output" ]] || [[ "$rules_output" == *"Status: inactive"* ]]; then
+        log_warning "UFW неактивен или нет правил"
+        return 0
+    fi
+
+    # Извлекаем номера правил
+    local rule_numbers=()
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^\[([0-9]+)\] ]]; then
+            rule_numbers+=("${BASH_REMATCH[1]}")
+        fi
+    done <<< "$rules_output"
+
+    if [[ ${#rule_numbers[@]} -eq 0 ]]; then
+        log_info "Нет правил для удаления"
+        return 0
+    fi
+
+    echo "Введите номера правил для удаления (через запятую):"
+    echo "Пример: 1,3,5"
+    echo
+
+    local rules_input
+    read -p "Номера правил: " -r rules_input
+
+    if [[ -z "$rules_input" ]]; then
+        log_info "Удаление отменено"
+        return 0
+    fi
+
+    # Разбираем введенные номера
+    IFS=',' read -ra input_rules <<< "$rules_input"
+    local valid_rules=()
+
+    for rule_num in "${input_rules[@]}"; do
+        # Убираем пробелы
+        rule_num=$(echo "$rule_num" | xargs)
+
+        if [[ "$rule_num" =~ ^[0-9]+$ ]]; then
+            # Проверяем, что номер существует в списке
+            local found=false
+            for existing_rule in "${rule_numbers[@]}"; do
+                if [[ "$rule_num" == "$existing_rule" ]]; then
+                    found=true
+                    break
+                fi
+            done
+
+            if [[ "$found" == "true" ]]; then
+                valid_rules+=("$rule_num")
+            else
+                log_warning "Правило #$rule_num не найдено, пропускаем"
+            fi
+        else
+            log_warning "Некорректный номер: '$rule_num', пропускаем"
+        fi
+    done
+
+    if [[ ${#valid_rules[@]} -eq 0 ]]; then
+        log_error "Нет корректных номеров правил для удаления"
+        return 1
+    fi
+
+    # Сортируем номера в обратном порядке для корректного удаления
+    IFS=$'\n' valid_rules=($(sort -nr <<<"${valid_rules[*]}"))
+
+    echo
+    log_warning "⚠️ Будут удалены следующие правила: ${valid_rules[*]}"
+    echo
+    read -p "Подтвердить удаление? (y/N): " -n 1 -r
+    echo
+
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Удаление отменено"
+        return 0
+    fi
+
+    # Удаляем правила
+    local deleted_count=0
+    for rule_num in "${valid_rules[@]}"; do
+        log_info "Удаление правила #$rule_num..."
+        if echo "y" | ufw delete "$rule_num" 2>/dev/null; then
+            log_success "Правило #$rule_num удалено"
+            ((deleted_count++))
+        else
+            log_error "Не удалось удалить правило #$rule_num"
+        fi
+    done
+
+    echo
+    log_success "Удалено правил: $deleted_count"
+
+    echo
+    log_info "Текущие правила после удаления:"
+    echo "════════════════════════════════════════"
+    ufw status numbered
+    echo "════════════════════════════════════════"
+}
 add_firewall_rule() {
     clear
     log_info "➕ Добавление правила файрвола"
@@ -168,19 +286,21 @@ configure_firewall() {
         echo "1. 📦 Установить UFW"
         echo "2. 🛡️ Настроить базовый файрвол"
         echo "3. ➕ Добавить правило"
-        echo "4. 📋 Показать статус"
-        echo "5. 🔙 Восстановить из резервной копии"
+        echo "4. 🗑️ Удалить правило"
+        echo "5. 📋 Показать статус"
+        echo "6. 🔙 Восстановить из резервной копии"
         echo "0. ⬅️  Назад в главное меню"
         echo
-        read -p "Выберите действие [0-5]: " -n 1 -r choice
+        read -p "Выберите действие [0-6]: " -n 1 -r choice
         echo
         
         case $choice in
             1) install_ufw ;;
             2) setup_basic_firewall ;;
             3) add_firewall_rule ;;
-            4) show_firewall_status ;;
-            5) restore_firewall_backup ;;
+            4) delete_firewall_rule ;;
+            5) show_firewall_status ;;
+            6) restore_firewall_backup ;;
             0) return 0 ;;
             *) 
                 log_error "Неверный выбор"

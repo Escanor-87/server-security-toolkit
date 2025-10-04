@@ -25,7 +25,8 @@ else
 fi
 readonly SCRIPT_DIR
 readonly MODULES_DIR="${SCRIPT_DIR}/modules"
-readonly LOGS_DIR="${SCRIPT_DIR}/logs"
+# Логи теперь хранятся вне директории установки для сохранения при обновлении
+readonly LOGS_DIR="/var/log/server-security-toolkit"
 
 # Создаем папку логов
 mkdir -p "$LOGS_DIR"
@@ -392,7 +393,7 @@ uninstall_toolkit() {
     echo "• Исполняемые файлы и модули"
     echo "• Символические ссылки (/usr/local/bin/security-toolkit, /usr/local/bin/ss)"
     echo "• Конфигурационные файлы"
-    echo "• Логи (опционально)"
+    echo "• Логи (опционально) - теперь хранятся отдельно в /var/log/server-security-toolkit"
     echo "• Резервные копии SSH и UFW (опционально)"
     echo
     
@@ -458,9 +459,11 @@ uninstall_toolkit() {
     fi
     
     # Удаляем логи
-    if [[ "$remove_logs" == "true" && -d "$SCRIPT_DIR/logs" ]]; then
-        rm -rf "$SCRIPT_DIR/logs"
-        log_success "Удалены логи"
+    if [[ "$remove_logs" == "true" ]]; then
+        if [[ -d "/var/log/server-security-toolkit" ]]; then
+            rm -rf "/var/log/server-security-toolkit"
+            log_success "Удалены логи из /var/log/server-security-toolkit"
+        fi
     fi
     
     # Удаляем основную директорию (кроме логов если они сохраняются)
@@ -504,7 +507,7 @@ uninstall_toolkit() {
     
     if [[ "$remove_logs" == "false" ]]; then
         echo
-        log_info "📋 Сохраненные логи: $SCRIPT_DIR/logs/"
+        log_info "📋 Сохраненные логи: /var/log/server-security-toolkit/"
     fi
     
     echo

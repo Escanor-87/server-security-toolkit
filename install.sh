@@ -82,25 +82,77 @@ install_dependencies() {
     log_success "Зависимости установлены"
 }
 
-# Клонирование репозитория
+# Проверка обновлений в репозитории
+check_for_updates() {
+    log_info "Проверка обновлений в репозитории..."
+    
+    # Переходим в директорию установки
+    cd "$INSTALL_DIR" || return 1
+    
+    # Получаем текущий коммит
+    local current_commit
+    current_commit=$(git rev-parse HEAD 2>/dev/null)
+    
+    # Получаем последние изменения с сервера
+    git fetch origin main >/dev/null 2>&1 || {
+        log_warning "Не удалось проверить обновления"
+        return 1
+    }
+    
+    # Получаем коммит на сервере
+    local remote_commit
+    remote_commit=$(git rev-parse origin/main 2>/dev/null)
+    
+    # Сравниваем коммиты
+    if [[ "$current_commit" != "$remote_commit" ]]; then
+        # Получаем информацию об изменениях
+        local commits_behind
+        commits_behind=$(git rev-list --count "$current_commit..$remote_commit" 2>/dev/null || echo "0")
+        
+        log_info "Доступны обновления: $commits_behind новых коммитов"
+        return 0  # Есть обновления
+    else
+        log_info "Установлена последняя версия"
+        return 1  # Нет обновлений
+    fi
+}
 clone_repository() {
     log_info "Клонирование Server Security Toolkit..."
     
     # Проверяем существующую установку
     if [[ -d "$INSTALL_DIR" ]]; then
         log_warning "Найдена существующая установка в $INSTALL_DIR"
-        read -p "Обновить установку? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            rm -rf "$INSTALL_DIR"
-            log_info "Старая установка удалена для обновления"
-            # Клонируем репозиторий
-            git clone "$REPO_URL" "$INSTALL_DIR"
-            log_success "Репозиторий обновлен в $INSTALL_DIR"
+        
+        # Проверяем обновления
+        if check_for_updates; then
+            # Есть обновления - предлагаем обновить
+            while true; do
+                read -p "Обновить установку до последней версии? (y/N): " -n 1 -r
+                echo
+                case $REPLY in
+                    [Yy])
+                        log_info "Обновление установлено пользователем"
+                        rm -rf "$INSTALL_DIR"
+                        log_info "Старая установка удалена для обновления"
+                        # Клонируем репозиторий
+                        git clone "$REPO_URL" "$INSTALL_DIR"
+                        log_success "Репозиторий обновлен в $INSTALL_DIR"
+                        break
+                        ;;
+                    [Nn]|"")
+                        log_info "Используем существующую установку"
+                        # Запускаем существующую версию
+                        log_success "Запуск установленной версии Security Toolkit..."
+                        exec "$INSTALL_DIR/main.sh"
+                        ;;
+                    *)
+                        log_error "Введите 'y' для обновления или 'n' для использования текущей версии"
+                        ;;
+                esac
+            done
         else
-            log_info "Используем существующую установку"
-            # Запускаем существующую версию
-            log_success "Запуск установленной версии Security Toolkit..."
+            # Нет обновлений - запускаем существующую версию
+            log_info "Установлена актуальная версия, запускаем..."
             exec "$INSTALL_DIR/main.sh"
         fi
     else
@@ -116,6 +168,13 @@ setup_permissions() {
     
     cd "$INSTALL_DIR"
     chmod +x main.sh modules/*.sh tests/*.sh
+    
+    # Создаем директорию для логов вне директории установки
+    local logs_dir="/var/log/server-security-toolkit"
+    mkdir -p "$logs_dir"
+    chown root:root "$logs_dir"
+    chmod 755 "$logs_dir"
+    log_success "Создана директория для логов: $logs_dir"
     
     # Удаляем старый алиас ss если существует
     if [[ -L "/usr/local/bin/ss" ]] || [[ -f "/usr/local/bin/ss" ]]; then
