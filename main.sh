@@ -1223,7 +1223,7 @@ update_toolkit() {
         
         # Перезапускаем скрипт
         sleep 3
-        exec "$0" "${ORIGINAL_ARGS[@]}"
+        exec "$SCRIPT_DIR/main.sh" "${ORIGINAL_ARGS[@]}"
     else
         log_error "❌ Ошибка при применении обновления"
         cd "$current_dir" 2>/dev/null || true
