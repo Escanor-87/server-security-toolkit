@@ -81,9 +81,9 @@ configure_fail2ban_basic() {
         if [[ "$has_auth_log" == "yes" ]]; then
             cat > "$jail_conf" <<EOF
 [DEFAULT]
-bantime = 1h
+bantime = 30m
 findtime = 10m
-maxretry = 5
+maxretry = 2
 
 [sshd]
 enabled = true
@@ -94,9 +94,9 @@ EOF
         else
             cat > "$jail_conf" <<EOF
 [DEFAULT]
-bantime = 1h
+bantime = 30m
 findtime = 10m
-maxretry = 5
+maxretry = 2
 
 [sshd]
 enabled = true
@@ -108,6 +108,16 @@ EOF
         fi
         log_success "Создан $jail_conf с базовыми настройками (has_auth_log=$has_auth_log)"
     else
+        # Обновляем DEFAULT секцию с новыми настройками
+        if grep -q "^\[DEFAULT\]" "$jail_conf"; then
+            sed -i '/^\[DEFAULT\]/,/^\[/{s/^bantime.*/bantime = 30m/}' "$jail_conf"
+            sed -i '/^\[DEFAULT\]/,/^\[/{s/^maxretry.*/maxretry = 2/}' "$jail_conf"
+            sed -i '/^\[DEFAULT\]/,/^\[/{s/^findtime.*/findtime = 10m/}' "$jail_conf"
+        else
+            # Добавляем DEFAULT секцию в начало файла если её нет
+            sed -i '1i[DEFAULT]\nbantime = 30m\nfindtime = 10m\nmaxretry = 2\n' "$jail_conf"
+        fi
+        
         # Идемпотентно гарантируем enabled=true для sshd и обновляем порт
         if grep -q "^\[sshd\]" "$jail_conf"; then
             sed -i '/^\[sshd\]/,/^\[/{s/^enabled.*/enabled = true/}' "$jail_conf"
@@ -227,6 +237,121 @@ EOF
     log_success "Автообновления включены"
 }
 
+# Диагностика fail2ban
+diagnose_fail2ban() {
+    clear
+    log_info "🔍 Диагностика fail2ban"
+    echo
+    
+    echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║         Диагностика fail2ban         ║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+    echo
+    
+    # Проверка установки
+    if ! command -v fail2ban-server &>/dev/null; then
+        log_error "fail2ban не установлен"
+        return 1
+    fi
+    
+    # Статус сервиса
+    local service_status
+    service_status=$(systemctl is-active fail2ban 2>/dev/null || echo "inactive")
+    echo -e "🔧 ${BLUE}Статус сервиса:${NC} $service_status"
+    
+    # Проверка конфигурации
+    local jail_conf="/etc/fail2ban/jail.local"
+    if [[ -f "$jail_conf" ]]; then
+        echo -e "📋 ${BLUE}Конфигурация:${NC} $jail_conf найден"
+        
+        # Показываем основные настройки
+        local bantime maxretry findtime
+        bantime=$(grep "^bantime" "$jail_conf" | head -1 | awk '{print $3}' || echo "не задано")
+        maxretry=$(grep "^maxretry" "$jail_conf" | head -1 | awk '{print $3}' || echo "не задано")
+        findtime=$(grep "^findtime" "$jail_conf" | head -1 | awk '{print $3}' || echo "не задано")
+        
+        echo -e "   • ${BLUE}bantime:${NC} $bantime"
+        echo -e "   • ${BLUE}maxretry:${NC} $maxretry"
+        echo -e "   • ${BLUE}findtime:${NC} $findtime"
+    else
+        log_warning "Конфигурация jail.local не найдена"
+    fi
+    
+    # Проверка логов
+    echo
+    echo -e "📊 ${BLUE}Проверка источников логов:${NC}"
+    if [[ -f "/var/log/auth.log" ]]; then
+        local auth_size
+        auth_size=$(stat -c%s "/var/log/auth.log" 2>/dev/null || echo "0")
+        echo -e "   • ${GREEN}/var/log/auth.log:${NC} найден (${auth_size} байт)"
+    else
+        echo -e "   • ${YELLOW}/var/log/auth.log:${NC} не найден (используется journald)"
+    fi
+    
+    # Проверка systemd журнала
+    local ssh_entries
+    ssh_entries=$(journalctl -u ssh.service --since "1 hour ago" 2>/dev/null | wc -l || echo "0")
+    echo -e "   • ${BLUE}journald (ssh.service):${NC} $ssh_entries записей за час"
+    
+    # Проверка активных jail'ов
+    echo
+    if [[ "$service_status" == "active" ]]; then
+        echo -e "🔒 ${BLUE}Активные jail'ы:${NC}"
+        local jail_status
+        jail_status=$(fail2ban-client status 2>/dev/null)
+        if [[ -n "$jail_status" ]]; then
+            echo "$jail_status" | while IFS= read -r line; do
+                if [[ "$line" =~ "Jail list:" ]]; then
+                    echo -e "   ${GREEN}$line${NC}"
+                else
+                    echo "   $line"
+                fi
+            done
+        else
+            echo -e "   ${YELLOW}⚠️ Нет активных jail'ов${NC}"
+        fi
+        
+        # Детали sshd jail если активен
+        if fail2ban-client status sshd &>/dev/null; then
+            echo
+            echo -e "🛡️ ${BLUE}Детали sshd jail:${NC}"
+            fail2ban-client status sshd 2>/dev/null | while IFS= read -r line; do
+                if [[ "$line" =~ "Currently banned:" ]]; then
+                    echo -e "   ${RED}$line${NC}"
+                elif [[ "$line" =~ "Total banned:" ]]; then
+                    echo -e "   ${YELLOW}$line${NC}"
+                else
+                    echo "   $line"
+                fi
+            done
+        fi
+    else
+        echo -e "❌ ${RED}fail2ban неактивен - невозможно получить статус jail'ов${NC}"
+    fi
+    
+    # Последние ошибки
+    echo
+    echo -e "📋 ${BLUE}Последние ошибки/предупреждения:${NC}"
+    echo "════════════════════════════════════════"
+    journalctl -u fail2ban --since "1 hour ago" -p warning 2>/dev/null | tail -10 | while IFS= read -r line; do
+        if [[ "$line" =~ "ERROR" ]]; then
+            echo -e "${RED}$line${NC}"
+        elif [[ "$line" =~ "WARNING" ]]; then
+            echo -e "${YELLOW}$line${NC}"
+        else
+            echo "$line"
+        fi
+    done
+    
+    echo
+    echo -e "${BLUE}💡 Объяснение частых ошибок:${NC}"
+    echo "• 'allowipv6' not defined - безопасное предупреждение, IPv6 настроится автоматически"
+    echo "• 'Have not found any log file' - неправильная конфигурация источника логов"
+    echo "• 'Server ready' - нормальное сообщение о готовности сервиса"
+    echo
+    echo "📊 Информация о банах/установках появится после первых попыток взлома"
+}
+
 # Показать статус безопасности
 show_security_status() {
     clear
@@ -320,10 +445,11 @@ system_hardening() {
         echo "4. ⚙️  Установить и включить unattended-upgrades"
         echo "5. 🧱 Установить CrowdSec"
         echo "6. 🚪 Установить CrowdSec Firewall Bouncer (iptables)"
-        echo "7. 📋 Показать статус безопасности"
+        echo "7. 🔍 Диагностика fail2ban"
+        echo "8. 📋 Показать статус безопасности"
         echo "0. ⬅️  Назад в главное меню"
         echo
-        read -p "Выберите действие [0-7]: " -n 1 -r choice
+        read -p "Выберите действие [0-8]: " -n 1 -r choice
         echo
         
         case $choice in
@@ -333,7 +459,8 @@ system_hardening() {
             4) install_unattended_upgrades ;;
             5) install_crowdsec ;;
             6) install_crowdsec_bouncer ;;
-            7) show_security_status ;;
+            7) diagnose_fail2ban ;;
+            8) show_security_status ;;
             0) return 0 ;;
             *) 
                 log_error "Неверный выбор"
