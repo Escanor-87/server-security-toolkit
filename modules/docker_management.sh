@@ -91,13 +91,25 @@ update_docker_compose() {
     
     # Очистка неиспользуемых образов
     echo
-    read -p "Очистить неиспользуемые Docker образы? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Очистка неиспользуемых образов..."
-        docker image prune -f
-        log_success "Очистка завершена"
-    fi
+    while true; do
+        read -p "Очистить неиспользуемые Docker образы? (y/N): " -n 1 -r
+        echo
+        case $REPLY in
+            [Yy])
+                log_info "Очистка неиспользуемых образов..."
+                docker image prune -f
+                log_success "Очистка завершена"
+                break
+                ;;
+            [Nn]|"")
+                log_info "Очистка образов пропущена"
+                break
+                ;;
+            *)
+                log_error "Введите 'y' для очистки образов или 'n' для пропуска"
+                ;;
+        esac
+    done
 }
 
 # Обновление всех найденных проектов
@@ -131,12 +143,22 @@ update_all_docker_projects() {
         
         echo
         if [[ $compose_file != "${compose_files[-1]}" ]]; then
-            read -p "Продолжить со следующим проектом? (Y/n): " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Nn]$ ]]; then
-                log_info "Обновление прервано пользователем"
-                break
-            fi
+            while true; do
+                read -p "Продолжить со следующим проектом? (Y/n): " -n 1 -r
+                echo
+                case $REPLY in
+                    [Yy]|"")
+                        break
+                        ;;
+                    [Nn])
+                        log_info "Обновление прервано пользователем"
+                        break 2  # Выход из внешнего цикла
+                        ;;
+                    *)
+                        log_error "Введите 'y' для продолжения или 'n' для остановки"
+                        ;;
+                esac
+            done
         fi
     done
     
@@ -147,6 +169,8 @@ update_all_docker_projects() {
     echo "• Ошибок: $failed_count"
     echo "• Всего проектов: ${#compose_files[@]}"
     echo "════════════════════════════════════════════════════════════════"
+    
+    return 0  # Возврат в меню Docker Management
 }
 
 # Показать Docker статус
@@ -425,18 +449,27 @@ manage_containers() {
     if [[ ${#containers[@]} -eq 0 ]]; then
         log_warning "Нет запущенных контейнеров"
         echo
-        echo "Показать все контейнеры (включая остановленные)? (y/N): "
-        read -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            mapfile -t containers < <(docker ps -a --format "{{.Names}}" 2>/dev/null)
-            if [[ ${#containers[@]} -eq 0 ]]; then
-                log_error "Контейнеры не найдены"
-                return 0
-            fi
-        else
-            return 0
-        fi
+        while true; do
+            read -p "Показать все контейнеры (включая остановленные)? (y/N): " -n 1 -r
+            echo
+            case $REPLY in
+                [Yy])
+                    mapfile -t containers < <(docker ps -a --format "{{.Names}}" 2>/dev/null)
+                    if [[ ${#containers[@]} -eq 0 ]]; then
+                        log_error "Контейнеры не найдены"
+                        return 0
+                    fi
+                    break
+                    ;;
+                [Nn]|"")
+                    log_info "Показ запущенных контейнеров отменен"
+                    return 0
+                    ;;
+                *)
+                    log_error "Введите 'y' для показа всех контейнеров или 'n' для отмены"
+                    ;;
+            esac
+        done
     fi
     
     echo -e "${BLUE}Доступные контейнеры:${NC}"
