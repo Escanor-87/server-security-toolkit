@@ -176,7 +176,7 @@ show_menu() {
     echo
     echo "1. 🚀 Full Security Setup - Интерактивная настройка безопасности"
     echo "2. 🔐 SSH Security - Настройка безопасности SSH"
-    echo "3. 🛡️  Firewall & UFW Management - Настройка файрвола и управление правилами"
+    echo "3. 🛡️  Firewall Setup - Настройка файрвола UFW"
     echo "4. 🔧 System Hardening - Укрепление системы"
     echo "5. 🐳 Docker Management - Управление Docker контейнерами"
     echo "6. ℹ️  System Information - Информация о системе"
@@ -947,6 +947,55 @@ show_security_summary() {
     echo "═══════════════════════════════════════════════════════════════"
 }
 
+# Проверка обновлений при запуске
+check_for_updates_silent() {
+    # Тихая проверка обновлений - не блокирует запуск
+    local current_dir
+    current_dir=$(pwd)
+    
+    # Переходим в директорию скрипта
+    cd "$SCRIPT_DIR" 2>/dev/null || return 0
+    
+    # Проверяем, есть ли git репозиторий
+    if [[ ! -d ".git" ]]; then
+        cd "$current_dir" 2>/dev/null || true
+        return 0
+    fi
+    
+    # Получаем текущий коммит
+    local current_commit
+    current_commit=$(git rev-parse HEAD 2>/dev/null)
+    
+    # Проверяем обновления
+    if git fetch origin main >/dev/null 2>&1; then
+        local remote_commit
+        remote_commit=$(git rev-parse origin/main 2>/dev/null)
+        
+        if [[ "$current_commit" != "$remote_commit" ]]; then
+            local commits_behind
+            commits_behind=$(git rev-list --count "$current_commit..$remote_commit" 2>/dev/null || echo "несколько")
+            
+            echo
+            echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${YELLOW}║                        ОБНОВЛЕНИЕ ДОСТУПНО!                      ║${NC}"
+            echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════╝${NC}"
+            echo
+            echo -e "${BLUE}📦 Доступно обновление: $commits_behind новых коммитов${NC}"
+            echo
+            echo "🔄 Для обновления запустите установщик:"
+            echo -e "${GREEN}   bash <(curl -Ls https://raw.githubusercontent.com/Escanor-87/server-security-toolkit/main/install.sh)${NC}"
+            echo
+            echo -e "${YELLOW}💡 Рекомендуется обновлять регулярно для получения исправлений безопасности${NC}"
+            echo
+            read -p "Нажмите Enter для продолжения..." -r
+            echo
+        fi
+    fi
+    
+    # Возвращаемся в исходную директорию
+    cd "$current_dir" 2>/dev/null || true
+}
+
 # Главная функция
 main() {
     log_info "🚀 Запуск Server Security Toolkit v$VERSION"
@@ -970,6 +1019,9 @@ main() {
         log_error "Критическая ошибка: не удалось загрузить модули"
         exit 1
     fi
+    
+    # Проверяем обновления
+    check_for_updates_silent
     
     # Главный цикл
     while true; do
