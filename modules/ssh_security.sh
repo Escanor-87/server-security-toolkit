@@ -506,7 +506,6 @@ generate_ssh_key() {
             log_info "   2. Добавить на других серверах: sudo ss → 3. Импорт ключа"
             echo
             read -p "Нажмите Enter для продолжения..." -r
-        fi
     else
         log_error "Ошибка генерации ключа"
         return 1

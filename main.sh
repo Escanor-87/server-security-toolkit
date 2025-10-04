@@ -445,7 +445,7 @@ view_logs() {
                     read -p "Очистить все логи? (y/N): " -n 1 -r
                     echo
                     if [[ $REPLY =~ ^[Yy]$ ]]; then
-                        > "$LOG_FILE"
+                        : > "$LOG_FILE"
                         log_success "Логи очищены"
                     fi
                     ;;
