@@ -7,8 +7,6 @@ find_docker_compose_files() {
     local search_dirs=("$HOME" "/opt" "/var/www" "/srv" "/docker" "/app")
     local compose_files=()
     
-    log_info "🔍 Поиск Docker Compose файлов..."
-    
     for dir in "${search_dirs[@]}"; do
         if [[ -d "$dir" ]]; then
             while IFS= read -r -d '' file; do
@@ -17,14 +15,16 @@ find_docker_compose_files() {
         fi
     done
     
-    # Также ищем в текущей директории
-    while IFS= read -r -d '' file; do
-        compose_files+=("$file")
-    done < <(find "$(pwd)" -maxdepth 2 -type f \( -name "docker-compose.yml" -o -name "docker-compose.yaml" -o -name "compose.yml" -o -name "compose.yaml" \) -print0 2>/dev/null)
-    
-    # Удаляем дубликаты
+    # Удаляем дубликаты и фильтруем
     local unique_files=()
     for file in "${compose_files[@]}"; do
+        # Пропускаем файлы в текущей директории (.)
+        local dir_name
+        dir_name=$(dirname "$file")
+        if [[ "$dir_name" == "." ]]; then
+            continue
+        fi
+        
         local found=false
         for unique in "${unique_files[@]}"; do
             if [[ "$file" == "$unique" ]]; then
@@ -418,10 +418,42 @@ manage_containers() {
     log_info "📋 Управление контейнерами"
     echo
     
-    echo -e "${BLUE}Запущенные контейнеры:${NC}"
+    # Получаем список контейнеров
+    local containers
+    mapfile -t containers < <(docker ps --format "{{.Names}}" 2>/dev/null)
+    
+    if [[ ${#containers[@]} -eq 0 ]]; then
+        log_warning "Нет запущенных контейнеров"
+        echo
+        echo "Показать все контейнеры (включая остановленные)? (y/N): "
+        read -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            mapfile -t containers < <(docker ps -a --format "{{.Names}}" 2>/dev/null)
+            if [[ ${#containers[@]} -eq 0 ]]; then
+                log_error "Контейнеры не найдены"
+                return 0
+            fi
+        else
+            return 0
+        fi
+    fi
+    
+    echo -e "${BLUE}Доступные контейнеры:${NC}"
     echo "════════════════════════════════════════"
-    docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null || echo "Нет запущенных контейнеров"
-    echo
+    
+    local i=1
+    for container in "${containers[@]}"; do
+        local status
+        status=$(docker ps -a --filter "name=^${container}$" --format "{{.Status}}" 2>/dev/null)
+        local image
+        image=$(docker ps -a --filter "name=^${container}$" --format "{{.Image}}" 2>/dev/null)
+        echo "$i. $container"
+        echo "   Образ: $image"
+        echo "   Статус: $status"
+        echo
+        ((i++))
+    done
     
     echo "Выберите действие:"
     echo "1. 🔄 Перезапустить контейнер"
@@ -436,24 +468,34 @@ manage_containers() {
     
     case $container_choice in
         1|2|3|4|5)
-            read -p "Введите имя или ID контейнера: " -r container_name
-            if [[ -z "$container_name" ]]; then
-                log_error "Имя контейнера не указано"
+            echo
+            read -p "Введите номер контейнера [1-${#containers[@]}]: " -r container_num
+            
+            if [[ ! "$container_num" =~ ^[0-9]+$ ]] || [[ "$container_num" -lt 1 ]] || [[ "$container_num" -gt ${#containers[@]} ]]; then
+                log_error "Неверный номер контейнера"
                 return 1
             fi
+            
+            local container_name="${containers[$((container_num-1))]}"
+            echo
+            log_info "Выбран контейнер: $container_name"
+            echo
             
             case $container_choice in
                 1)
                     log_info "Перезапуск контейнера $container_name..."
                     docker restart "$container_name"
+                    log_success "Контейнер перезапущен"
                     ;;
                 2)
                     log_info "Остановка контейнера $container_name..."
                     docker stop "$container_name"
+                    log_success "Контейнер остановлен"
                     ;;
                 3)
                     log_info "Запуск контейнера $container_name..."
                     docker start "$container_name"
+                    log_success "Контейнер запущен"
                     ;;
                 4)
                     log_info "Логи контейнера $container_name:"
