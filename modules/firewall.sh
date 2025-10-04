@@ -88,6 +88,39 @@ show_firewall_status() {
     echo "════════════════════════════════════════"
 }
 
+# Нормализация строки правила (убираем лишние пробелы)
+normalize_firewall_rule_text() {
+    local text="$1"
+    # Сжимаем повторяющиеся пробелы и обрезаем пробелы по краям
+    text=$(echo "$text" | sed -E 's/[[:space:]]+/ /g' | sed -E 's/^ //; s/ $//')
+    echo "$text"
+}
+
+# Поиск текущего номера правила по сохраненной строке
+get_current_rule_number() {
+    local target_raw="$1"
+    local target
+    target=$(normalize_firewall_rule_text "$target_raw")
+
+    local status_output
+    status_output=$(ufw status numbered 2>/dev/null)
+
+    local line
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\][[:space:]]*(.*)$ ]]; then
+            local number="${BASH_REMATCH[1]}"
+            local content="${BASH_REMATCH[2]}"
+            content=$(normalize_firewall_rule_text "$content")
+            if [[ "$content" == "$target" ]]; then
+                echo "$number"
+                return 0
+            fi
+        fi
+    done <<< "$status_output"
+
+    return 1
+}
+
 # Удалить правило
 delete_firewall_rule() {
     clear
@@ -121,10 +154,11 @@ delete_firewall_rule() {
     # Получаем строки только с номерами правил
     while IFS= read -r line; do
         # Ищем строки вида "[число]" в начале строки (с учетом пробелов внутри скобок)
-        if [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\][[:space:]] ]]; then
+        if [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\][[:space:]]*(.*)$ ]]; then
             local rule_num="${BASH_REMATCH[1]}"
+            local rule_text="${BASH_REMATCH[2]}"
             rule_numbers+=("$rule_num")
-            rule_lines+=("$line")
+            rule_lines+=("$(normalize_firewall_rule_text "$rule_text")")
         fi
     done <<< "$rules_output"
 
@@ -191,8 +225,18 @@ delete_firewall_rule() {
         return 0  # Не выходим из скрипта, а возвращаемся в меню
     fi
 
-    # Сортируем номера в обратном порядке для корректного удаления
+    # Подготавливаем список выбранных правил (строки) и сортируем номера в обратном порядке
     mapfile -t valid_rules < <(printf '%s\n' "${valid_rules[@]}" | sort -nr)
+
+    local selected_rule_entries=()
+    for rule_num in "${valid_rules[@]}"; do
+        for idx in "${!rule_numbers[@]}"; do
+            if [[ "$rule_num" == "${rule_numbers[$idx]}" ]]; then
+                selected_rule_entries+=("${rule_lines[$idx]}")
+                break
+            fi
+        done
+    done
 
     echo
     log_warning "⚠️ Будут удалены правила: ${valid_rules[*]}"
@@ -205,15 +249,20 @@ delete_firewall_rule() {
         return 0
     fi
 
-    # Удаляем правила по одному (номера правил изменяются при удалении)
+    # Удаляем правила по одному, каждый раз пересчитывая актуальный номер
     local deleted_count=0
-    for rule_num in "${valid_rules[@]}"; do
-        log_info "Удаление правила #$rule_num..."
-        if echo "y" | ufw delete "$rule_num" 2>/dev/null; then
-            log_success "Правило #$rule_num удалено"
-            ((deleted_count++))
+    for rule_entry in "${selected_rule_entries[@]}"; do
+        local current_number
+        if current_number=$(get_current_rule_number "$rule_entry"); then
+            log_info "Удаление правила #$current_number..."
+            if echo "y" | ufw delete "$current_number" 2>/dev/null; then
+                log_success "Правило удалено: $rule_entry"
+                ((deleted_count++))
+            else
+                log_error "Не удалось удалить правило: $rule_entry"
+            fi
         else
-            log_error "Не удалось удалить правило #$rule_num"
+            log_warning "Правило уже отсутствует: $rule_entry"
         fi
     done
 
