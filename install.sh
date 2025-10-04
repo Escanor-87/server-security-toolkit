@@ -123,42 +123,50 @@ clone_repository() {
     if [[ -d "$INSTALL_DIR" ]]; then
         log_warning "Найдена существующая установка в $INSTALL_DIR"
         
-        # Проверяем обновления
-        if check_for_updates; then
-            # Есть обновления - предлагаем обновить
-            while true; do
-                read -p "Обновить установку до последней версии? (y/N): " -n 1 -r
-                echo
-                case $REPLY in
-                    [Yy])
-                        log_info "Обновление установлено пользователем"
-                        rm -rf "$INSTALL_DIR"
-                        log_info "Старая установка удалена для обновления"
-                        # Возвращаемся в домашнюю директорию перед клонированием
-                        cd "$HOME" || {
-                            log_error "Не удалось перейти в домашнюю директорию"
-                            exit 1
-                        }
-                        # Клонируем репозиторий
-                        git clone "$REPO_URL" "$INSTALL_DIR"
-                        log_success "Репозиторий обновлен в $INSTALL_DIR"
-                        break
-                        ;;
-                    [Nn]|"")
-                        log_info "Используем существующую установку"
-                        # Запускаем существующую версию
-                        log_success "Запуск установленной версии Security Toolkit..."
-                        exec "$INSTALL_DIR/main.sh"
-                        ;;
-                    *)
-                        log_error "Введите 'y' для обновления или 'n' для использования текущей версии"
-                        ;;
-                esac
-            done
+        # Проверяем, что установка полная
+        if [[ ! -f "$INSTALL_DIR/main.sh" ]] || [[ ! -d "$INSTALL_DIR/modules" ]]; then
+            log_warning "Установка повреждена, переустанавливаем..."
+            rm -rf "$INSTALL_DIR"
+            git clone "$REPO_URL" "$INSTALL_DIR"
+            log_success "Репозиторий переустановлен в $INSTALL_DIR"
         else
-            # Нет обновлений - запускаем существующую версию
-            log_info "Установлена актуальная версия, запускаем..."
-            exec "$INSTALL_DIR/main.sh"
+            # Проверяем обновления
+            if check_for_updates; then
+                # Есть обновления - предлагаем обновить
+                while true; do
+                    read -p "Обновить установку до последней версии? (y/N): " -n 1 -r
+                    echo
+                    case $REPLY in
+                        [Yy])
+                            log_info "Обновление установлено пользователем"
+                            rm -rf "$INSTALL_DIR"
+                            log_info "Старая установка удалена для обновления"
+                            # Возвращаемся в домашнюю директорию перед клонированием
+                            cd "$HOME" || {
+                                log_error "Не удалось перейти в домашнюю директорию"
+                                exit 1
+                            }
+                            # Клонируем репозиторий
+                            git clone "$REPO_URL" "$INSTALL_DIR"
+                            log_success "Репозиторий обновлен в $INSTALL_DIR"
+                            break
+                            ;;
+                        [Nn]|"")
+                            log_info "Используем существующую установку"
+                            # Запускаем существующую версию
+                            log_success "Запуск установленной версии Security Toolkit..."
+                            exec "$INSTALL_DIR/main.sh"
+                            ;;
+                        *)
+                            log_error "Введите 'y' для обновления или 'n' для использования текущей версии"
+                            ;;
+                    esac
+                done
+            else
+                # Нет обновлений - запускаем существующую версию
+                log_info "Установлена актуальная версия, запускаем..."
+                exec "$INSTALL_DIR/main.sh"
+            fi
         fi
     else
         # Клонируем репозиторий (новая установка)
