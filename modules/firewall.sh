@@ -195,7 +195,7 @@ delete_firewall_rule() {
     mapfile -t valid_rules < <(printf '%s\n' "${valid_rules[@]}" | sort -nr)
 
     echo
-    log_warning "⚠️ Будут удалены следующие правила: ${valid_rules[*]}"
+    log_warning "⚠️ Будут удалены правила: ${valid_rules[*]}"
     echo
     read -p "Подтвердить удаление? (y/N): " -n 1 -r
     echo
@@ -205,7 +205,7 @@ delete_firewall_rule() {
         return 0
     fi
 
-    # Удаляем правила
+    # Удаляем правила по одному (номера правил изменяются при удалении)
     local deleted_count=0
     for rule_num in "${valid_rules[@]}"; do
         log_info "Удаление правила #$rule_num..."
