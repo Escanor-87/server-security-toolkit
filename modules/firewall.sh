@@ -232,7 +232,7 @@ delete_firewall_rule() {
     local unique_rules=()
     declare -A seen_rules=()
     for rule_num in "${valid_rules[@]}"; do
-        if [[ -z "${seen_rules[$rule_num]}" ]]; then
+        if [[ -z "${seen_rules[$rule_num]+x}" ]]; then
             unique_rules+=("$rule_num")
             seen_rules[$rule_num]=1
         fi
@@ -260,7 +260,7 @@ delete_firewall_rule() {
     local failed_count=0
 
     for rule_num in "${valid_rules[@]}"; do
-        local signature="${original_signatures[$rule_num]}"
+        local signature="${original_signatures[$rule_num]-}"
         local current_number=""
 
         # Перечитываем список правил и находим текущий номер по сигнатуре
