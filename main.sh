@@ -25,31 +25,83 @@ else
 fi
 readonly SCRIPT_DIR
 readonly MODULES_DIR="${SCRIPT_DIR}/modules"
-# Логи теперь хранятся вне директории установки для сохранения при обновлении
-readonly LOGS_DIR="/var/log/server-security-toolkit"
+# Логи теперь хранятся в отдельной папке logs в директории скрипта
+readonly LOGS_DIR="${SCRIPT_DIR}/logs"
 
 # Создаем папку логов
 mkdir -p "$LOGS_DIR"
 
-# Файл логов - исправляем SC2155  
-LOG_FILE="${LOGS_DIR}/security-$(date +%Y%m%d_%H%M%S).log"
+# Файл логов - теперь один файл на все время работы, с ротацией по размеру
+LOG_FILE="${LOGS_DIR}/security-toolkit.log"
 readonly LOG_FILE
+
+# Функция ротации логов
+rotate_logs() {
+    # Проверяем размер файла логов (10MB)
+    local max_size=$((10 * 1024 * 1024))
+    if [[ -f "$LOG_FILE" && $(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null) -gt $max_size ]]; then
+        local timestamp
+        timestamp=$(date '+%Y%m%d_%H%M%S')
+        local backup_file="${LOGS_DIR}/security-toolkit-${timestamp}.log"
+        
+        mv "$LOG_FILE" "$backup_file" 2>/dev/null
+        log_info "Лог файл был ротирован: $backup_file"
+        
+        # Оставляем только последние 10 файлов
+        local log_files
+        mapfile -t log_files < <(ls -t "${LOGS_DIR}"/security-toolkit-*.log 2>/dev/null | tail -n +11)
+        for old_file in "${log_files[@]}"; do
+            rm -f "$old_file"
+        done
+    fi
+}
 
 # Функции логирования
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1" | tee -a "$LOG_FILE"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo -e "${BLUE}[$timestamp] [INFO]${NC} $1" | tee -a "$LOG_FILE"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1" | tee -a "$LOG_FILE"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo -e "${GREEN}[$timestamp] [SUCCESS]${NC} $1" | tee -a "$LOG_FILE"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1" | tee -a "$LOG_FILE"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo -e "${YELLOW}[$timestamp] [WARNING]${NC} $1" | tee -a "$LOG_FILE"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1" | tee -a "$LOG_FILE"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo -e "${RED}[$timestamp] [ERROR]${NC} $1" | tee -a "$LOG_FILE"
+}
+
+# Детальное логирование команд
+log_command() {
+    local command="$1"
+    local result="$2"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    if [[ "$result" == "success" ]]; then
+        echo "[$timestamp] [COMMAND] SUCCESS: $command" >> "$LOG_FILE"
+    else
+        echo "[$timestamp] [COMMAND] FAILED: $command" >> "$LOG_FILE"
+    fi
+}
+
+# Логирование изменений конфигурации
+log_config_change() {
+    local file="$1"
+    local change="$2"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] [CONFIG] $file: $change" >> "$LOG_FILE"
 }
 
 # Функция для отображения заголовка
@@ -70,7 +122,7 @@ check_root() {
     if [[ $EUID -ne 0 ]]; then
         log_error "Этот скрипт должен запускаться с правами root"
         log_info "Запустите: sudo bash $0"
-        exit 1
+        return 1
     fi
     log_success "Права root подтверждены"
 }
@@ -79,7 +131,7 @@ check_root() {
 check_os() {
     if [[ ! -f /etc/os-release ]]; then
         log_error "Не удается определить операционную систему"
-        exit 1
+        return 1
     fi
     
     # shellcheck disable=SC1091
@@ -99,7 +151,7 @@ check_os() {
                 echo
                 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                     log_info "Выполнение прервано пользователем"
-                    exit 1
+        return 1
                 fi
             fi
             ;;
@@ -110,7 +162,7 @@ check_os() {
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 log_info "Выполнение прервано пользователем"
-                exit 1
+        return 1
             fi
             ;;
     esac
@@ -133,7 +185,7 @@ check_requirements() {
     
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         log_error "Отсутствуют необходимые инструменты: ${missing_tools[*]}"
-        exit 1
+        return 1
     fi
     
     log_success "Все системные требования выполнены"
@@ -1124,6 +1176,9 @@ update_toolkit() {
 
 # Главная функция
 main() {
+    # Ротируем логи при запуске
+    rotate_logs
+    
     log_info "🚀 Запуск Server Security Toolkit v$VERSION"
     log_info "Скрипт запущен из: ${BASH_SOURCE[0]}"
     if [[ -L "${BASH_SOURCE[0]}" ]]; then
