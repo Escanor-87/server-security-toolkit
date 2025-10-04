@@ -172,6 +172,15 @@ load_modules() {
 # Главное меню
 show_menu() {
     show_header
+    
+    # Показываем уведомление об обновлении если оно доступно
+    if [[ "$UPDATE_AVAILABLE" == "true" ]]; then
+        echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║                        ОБНОВЛЕНИЕ ДОСТУПНО!                      ║${NC}"
+        echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════╝${NC}"
+        echo
+    fi
+    
     echo "🔧 Выберите действие:"
     echo
     echo "1. 🚀 Full Security Setup - Интерактивная настройка безопасности"
@@ -181,10 +190,20 @@ show_menu() {
     echo "5. 🐳 Docker Management - Управление Docker контейнерами"
     echo "6. ℹ️  System Information - Информация о системе"
     echo "7. 📋 View Logs - Просмотр логов"
-    echo "8. 🗑️  Uninstall - Удалить Security Toolkit"
-    echo "0. 🚪 Exit - Выход"
-    echo
-    echo -n "Введите номер действия [0-8]: "
+    
+    # Добавляем пункт обновления если обновление доступно
+    if [[ "$UPDATE_AVAILABLE" == "true" ]]; then
+        echo "8. 🔄 Update Toolkit - Обновить Security Toolkit"
+        echo "9. 🗑️  Uninstall - Удалить Security Toolkit"
+        echo "0. 🚪 Exit - Выход"
+        echo
+        echo -n "Введите номер действия [0-9]: "
+    else
+        echo "8. 🗑️  Uninstall - Удалить Security Toolkit"
+        echo "0. 🚪 Exit - Выход"
+        echo
+        echo -n "Введите номер действия [0-8]: "
+    fi
 }
 
 # Информация о системе - расширенная версия
@@ -952,48 +971,155 @@ check_for_updates_silent() {
     # Тихая проверка обновлений - не блокирует запуск
     local current_dir
     current_dir=$(pwd)
-    
+
     # Переходим в директорию скрипта
-    cd "$SCRIPT_DIR" 2>/dev/null || return 0
-    
+    cd "$SCRIPT_DIR" 2>/dev/null || return 1
+
     # Проверяем, есть ли git репозиторий
     if [[ ! -d ".git" ]]; then
         cd "$current_dir" 2>/dev/null || true
-        return 0
+        return 1
     fi
-    
+
     # Получаем текущий коммит
     local current_commit
     current_commit=$(git rev-parse HEAD 2>/dev/null)
-    
+
     # Проверяем обновления
     if git fetch origin main >/dev/null 2>&1; then
         local remote_commit
         remote_commit=$(git rev-parse origin/main 2>/dev/null)
-        
+
         if [[ "$current_commit" != "$remote_commit" ]]; then
-            local commits_behind
-            commits_behind=$(git rev-list --count "$current_commit..$remote_commit" 2>/dev/null || echo "несколько")
-            
-            echo
-            echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════╗${NC}"
-            echo -e "${YELLOW}║                        ОБНОВЛЕНИЕ ДОСТУПНО!                      ║${NC}"
-            echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════╝${NC}"
-            echo
-            echo -e "${BLUE}📦 Доступно обновление: $commits_behind новых коммитов${NC}"
-            echo
-            echo "🔄 Для обновления запустите установщик:"
-            echo -e "${GREEN}   bash <(curl -Ls https://raw.githubusercontent.com/Escanor-87/server-security-toolkit/main/install.sh)${NC}"
-            echo
-            echo -e "${YELLOW}💡 Рекомендуется обновлять регулярно для получения исправлений безопасности${NC}"
-            echo
-            read -p "Нажмите Enter для продолжения..." -r
-            echo
+            cd "$current_dir" 2>/dev/null || true
+            return 0  # Обновления есть
         fi
     fi
-    
+
     # Возвращаемся в исходную директорию
     cd "$current_dir" 2>/dev/null || true
+    return 1  # Обновлений нет
+}
+
+# Глобальная переменная для отслеживания обновлений
+UPDATE_AVAILABLE=false
+
+# Функция обновления Security Toolkit
+update_toolkit() {
+    clear
+    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║           🔄 ОБНОВЛЕНИЕ SECURITY TOOLKIT          ║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
+    echo
+    
+    log_info "🔄 Начинаем процесс обновления..."
+    echo
+    
+    # Проверяем наличие git
+    if ! command -v git &>/dev/null; then
+        log_error "❌ Git не установлен. Невозможно выполнить обновление"
+        echo
+        read -p "Нажмите Enter для возврата в главное меню..." -r
+        return 1
+    fi
+    
+    # Сохраняем текущую директорию
+    local current_dir
+    current_dir=$(pwd)
+    
+    # Переходим в директорию скрипта
+    cd "$SCRIPT_DIR" 2>/dev/null || {
+        log_error "❌ Не удалось перейти в директорию скрипта: $SCRIPT_DIR"
+        cd "$current_dir" 2>/dev/null || true
+        echo
+        read -p "Нажмите Enter для возврата в главное меню..." -r
+        return 1
+    }
+    
+    # Проверяем, что это git репозиторий
+    if [[ ! -d ".git" ]]; then
+        log_error "❌ Директория $SCRIPT_DIR не является git репозиторием"
+        cd "$current_dir" 2>/dev/null || true
+        echo
+        read -p "Нажмите Enter для возврата в главное меню..." -r
+        return 1
+    fi
+    
+    echo "📦 Скачиваем обновления..."
+    if ! git fetch origin main 2>/dev/null; then
+        log_error "❌ Не удалось скачать обновления"
+        cd "$current_dir" 2>/dev/null || true
+        echo
+        read -p "Нажмите Enter для возврата в главное меню..." -r
+        return 1
+    fi
+    
+    # Получаем информацию о коммитах
+    local current_commit remote_commit commits_behind
+    current_commit=$(git rev-parse HEAD 2>/dev/null)
+    remote_commit=$(git rev-parse origin/main 2>/dev/null)
+    commits_behind=$(git rev-list --count "$current_commit..$remote_commit" 2>/dev/null || echo "несколько")
+    
+    if [[ "$current_commit" == "$remote_commit" ]]; then
+        log_success "✅ У вас уже установлена последняя версия"
+        cd "$current_dir" 2>/dev/null || true
+        echo
+        read -p "Нажмите Enter для возврата в главное меню..." -r
+        return 0
+    fi
+    
+    echo -e "${BLUE}📊 Информация об обновлении:${NC}"
+    echo "   Текущий коммит: ${current_commit:0:7}"
+    echo "   Новый коммит:    ${remote_commit:0:7}"
+    echo "   Новых коммитов:  $commits_behind"
+    echo
+    
+    # Показываем изменения
+    echo -e "${BLUE}📋 Изменения в обновлении:${NC}"
+    echo "═══════════════════════════════════════════════════════════════"
+    git log --oneline --no-merges "$current_commit..$remote_commit" 2>/dev/null || echo "Не удалось получить список изменений"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo
+    
+    read -p "Применить обновление? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Обновление отменено"
+        cd "$current_dir" 2>/dev/null || true
+        echo
+        read -p "Нажмите Enter для возврата в главное меню..." -r
+        return 0
+    fi
+    
+    echo
+    log_info "🔄 Применяем обновление..."
+    
+    # Выполняем обновление
+    if git reset --hard origin/main 2>/dev/null; then
+        log_success "✅ Обновление успешно применено!"
+        echo
+        
+        # Обновляем статус обновлений
+        UPDATE_AVAILABLE=false
+        
+        # Показываем сообщение о перезапуске
+        echo -e "${GREEN}🔄 Скрипт будет автоматически перезапущен через 3 секунды...${NC}"
+        echo -e "${YELLOW}💡 Если перезапуск не сработает, запустите скрипт вручную${NC}"
+        echo
+        
+        # Возвращаемся в исходную директорию
+        cd "$current_dir" 2>/dev/null || true
+        
+        # Перезапускаем скрипт
+        sleep 3
+        exec "$0" "$@"
+    else
+        log_error "❌ Ошибка при применении обновления"
+        cd "$current_dir" 2>/dev/null || true
+        echo
+        read -p "Нажмите Enter для возврата в главное меню..." -r
+        return 1
+    fi
 }
 
 # Главная функция
@@ -1021,7 +1147,12 @@ main() {
     fi
     
     # Проверяем обновления
-    check_for_updates_silent
+    if check_for_updates_silent; then
+        UPDATE_AVAILABLE=true
+        log_info "Доступны обновления скрипта"
+    else
+        UPDATE_AVAILABLE=false
+    fi
     
     # Главный цикл
     while true; do
@@ -1079,8 +1210,23 @@ main() {
                 view_logs 
                 ;;
             8) 
-                log_info "Пользователь выбрал: Uninstall"
-                uninstall_toolkit
+                if [[ "$UPDATE_AVAILABLE" == "true" ]]; then
+                    log_info "Пользователь выбрал: Update Toolkit"
+                    update_toolkit
+                else
+                    log_info "Пользователь выбрал: Uninstall"
+                    uninstall_toolkit
+                fi
+                ;;
+            9) 
+                if [[ "$UPDATE_AVAILABLE" == "true" ]]; then
+                    log_info "Пользователь выбрал: Uninstall"
+                    uninstall_toolkit
+                else
+                    log_error "Неверный выбор: '$choice'"
+                    sleep 2
+                    continue
+                fi
                 ;;
             0) 
                 log_info "До свидания! 👋"
