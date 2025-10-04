@@ -48,17 +48,135 @@ update_ufw_ssh_port() {
     
     log_info "Обновление правил UFW..."
     
-    # Удаляем старое правило, если оно существует и порт не 22
-    if [[ "$old_port" != "22" ]] && ufw status numbered | grep -q "$old_port/tcp"; then
-        log_info "Удаление старого правила для порта $old_port"
-        ufw delete allow "$old_port/tcp" 2>/dev/null || true
+    # Удаляем все существующие SSH правила для старого порта
+    if [[ "$old_port" != "$new_port" ]]; then
+        log_info "Поиск и удаление старых SSH правил для порта $old_port"
+        
+        # Удаляем правила по номеру порта (различные варианты)
+        local rules_to_delete=()
+        
+        # Ищем правила с портом и комментарием SSH
+        while IFS= read -r line; do
+            if [[ "$line" =~ \[.*\].*$old_port/tcp.*SSH ]] || [[ "$line" =~ \[.*\].*$old_port/tcp ]] && [[ "$line" =~ ALLOW ]]; then
+                local rule_num
+                rule_num=$(echo "$line" | grep -o '^\[[0-9]*\]' | tr -d '[]')
+                if [[ -n "$rule_num" ]]; then
+                    rules_to_delete+=("$rule_num")
+                fi
+            fi
+        done < <(ufw status numbered 2>/dev/null)
+        
+        # Удаляем правила в обратном порядке (чтобы номера не сбились)
+        if [[ ${#rules_to_delete[@]} -gt 0 ]]; then
+            for ((i=${#rules_to_delete[@]}-1; i>=0; i--)); do
+                local rule_num="${rules_to_delete[i]}"
+                log_info "Удаление правила #$rule_num для порта $old_port"
+                echo "y" | ufw delete "$rule_num" 2>/dev/null || true
+            done
+        else
+            # Попытка удалить по прямому указанию порта
+            log_info "Попытка удаления правила для порта $old_port напрямую"
+            ufw delete allow "$old_port/tcp" 2>/dev/null || true
+            ufw delete allow "$old_port" 2>/dev/null || true
+        fi
     fi
     
-    # Добавляем новое правило
-    log_info "Добавление правила для нового SSH порта $new_port"
-    ufw allow "$new_port/tcp" comment "SSH"
+    # Проверяем, не существует ли уже правило для нового порта
+    if ufw status numbered | grep -q "$new_port/tcp"; then
+        log_info "Правило для порта $new_port уже существует"
+    else
+        # Добавляем новое правило
+        log_info "Добавление правила для нового SSH порта $new_port"
+        ufw allow "$new_port/tcp" comment "SSH"
+    fi
     
     log_success "UFW правила обновлены для SSH порта $new_port"
+    
+    # Показываем текущие правила для проверки
+    echo
+    log_info "Текущие UFW правила:"
+    ufw status numbered | grep -E "(SSH|$new_port)" || echo "Нет SSH правил"
+}
+
+# Очистка всех SSH правил из UFW
+clean_ufw_ssh_rules() {
+    clear
+    log_info "🧹 Очистка SSH правил из UFW"
+    echo
+    
+    if ! command -v ufw &>/dev/null; then
+        log_error "UFW не установлен"
+        return 1
+    fi
+    
+    # Показываем текущие SSH правила
+    echo -e "${BLUE}Текущие SSH правила в UFW:${NC}"
+    echo "════════════════════════════════════════"
+    local ssh_rules_found=false
+    
+    while IFS= read -r line; do
+        if [[ "$line" =~ SSH ]] || [[ "$line" =~ 22/tcp ]] || [[ "$line" =~ 2222/tcp ]] || [[ "$line" =~ [0-9]+/tcp.*ALLOW ]]; then
+            echo "$line"
+            ssh_rules_found=true
+        fi
+    done < <(ufw status numbered 2>/dev/null)
+    
+    if [[ "$ssh_rules_found" == "false" ]]; then
+        log_info "SSH правила не найдены"
+        return 0
+    fi
+    
+    echo
+    log_warning "⚠️  ВНИМАНИЕ: Будут удалены ВСЕ SSH правила из UFW!"
+    echo "Убедитесь, что у вас есть альтернативный доступ к серверу."
+    echo
+    read -p "Продолжить очистку SSH правил? (y/N): " -n 1 -r
+    echo
+    
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Очистка отменена"
+        return 0
+    fi
+    
+    # Собираем все SSH правила для удаления
+    local rules_to_delete=()
+    
+    while IFS= read -r line; do
+        if [[ "$line" =~ \[([0-9]+)\] ]]; then
+            if [[ "$line" =~ SSH ]] || [[ "$line" =~ 22/tcp ]] || [[ "$line" =~ 2222/tcp ]] || [[ "$line" =~ [0-9]+/tcp.*ALLOW ]]; then
+                local rule_num="${BASH_REMATCH[1]}"
+                rules_to_delete+=("$rule_num")
+            fi
+        fi
+    done < <(ufw status numbered 2>/dev/null)
+    
+    # Удаляем правила в обратном порядке
+    if [[ ${#rules_to_delete[@]} -gt 0 ]]; then
+        log_info "Удаление ${#rules_to_delete[@]} SSH правил..."
+        
+        for ((i=${#rules_to_delete[@]}-1; i>=0; i--)); do
+            local rule_num="${rules_to_delete[i]}"
+            log_info "Удаление правила #$rule_num"
+            echo "y" | ufw delete "$rule_num" 2>/dev/null || true
+        done
+        
+        log_success "SSH правила очищены"
+        
+        # Показываем результат
+        echo
+        log_info "Текущие правила UFW после очистки:"
+        ufw status numbered
+        
+        # Предупреждение о необходимости добавить SSH правило
+        echo
+        log_warning "⚠️  Не забудьте добавить правило для текущего SSH порта!"
+        local current_port
+        current_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
+        echo "Текущий SSH порт: $current_port"
+        echo "Команда: ufw allow $current_port/tcp comment \"SSH\""
+    else
+        log_info "SSH правила для удаления не найдены"
+    fi
 }
 
 # Изменение SSH порта
@@ -1194,10 +1312,11 @@ configure_ssh_security() {
         echo "5. 🔒 Отключить парольную авторизацию"
         echo "6. 🚫 Отключить root SSH вход"
         echo "7. 🔄 Перезапустить SSH службу"
-        echo "8. 🔙 Восстановить из резервной копии"
+        echo "8. 🧹 Очистить SSH правила из UFW"
+        echo "9. 🔙 Восстановить из резервной копии"
         echo "0. ⬅️  Назад в главное меню"
         echo
-        read -p "Выберите действие [0-8]: " -n 1 -r choice
+        read -p "Выберите действие [0-9]: " -n 1 -r choice
         echo
         
         case $choice in
@@ -1208,7 +1327,8 @@ configure_ssh_security() {
             5) disable_password_auth ;;
             6) disable_root_login ;;
             7) restart_ssh ;;
-            8) restore_from_backup ;;
+            8) clean_ufw_ssh_rules ;;
+            9) restore_from_backup ;;
             0) return 0 ;;
             *)
                 log_error "Неверный выбор: '$choice'"
