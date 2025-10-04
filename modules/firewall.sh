@@ -38,7 +38,8 @@ setup_basic_firewall() {
     
     # Создаем резервную копию текущих правил UFW
     local backup_dir="/etc/ufw/backup"
-    local backup_file="$backup_dir/ufw_rules_$(date +%Y%m%d_%H%M%S).tar.gz"
+    local backup_file
+    backup_file="$backup_dir/ufw_rules_$(date +%Y%m%d_%H%M%S).tar.gz"
     
     mkdir -p "$backup_dir"
     if tar -czf "$backup_file" -C /etc/ufw . 2>/dev/null; then
@@ -113,14 +114,14 @@ delete_firewall_rule() {
         return 0
     fi
 
-    # Извлекаем номера правил - улучшенная логика
+    # Извлекаем номера правил - исправленная логика
     local rule_numbers=()
     local rule_lines=()
     
     # Получаем строки только с номерами правил
     while IFS= read -r line; do
-        # Ищем строки вида "[число]" в начале строки
-        if [[ "$line" =~ ^[[:space:]]*\[([0-9]+)\][[:space:]] ]]; then
+        # Ищем строки вида "[число]" в начале строки (с учетом пробелов внутри скобок)
+        if [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\][[:space:]] ]]; then
             local rule_num="${BASH_REMATCH[1]}"
             rule_numbers+=("$rule_num")
             rule_lines+=("$line")
@@ -132,8 +133,9 @@ delete_firewall_rule() {
         return 0
     fi
 
-    echo "Введите номера правил для удаления (через запятую):"
-    echo "Пример: 1,3,5"
+    echo "Введите номера правил для удаления:"
+    echo "Разделители: пробел, запятая или запятая с пробелом"
+    echo "Примеры: 1 3 5    или    1,3,5    или    1, 3, 5"
     echo
 
     local rules_input
@@ -144,14 +146,24 @@ delete_firewall_rule() {
         return 0
     fi
 
-    # Разбираем введенные номера
-    IFS=',' read -ra input_rules <<< "$rules_input"
+    # Разбираем введенные номера - поддержка разных разделителей
+    # Заменяем запятые с пробелами и без на пробелы, затем разбиваем по пробелам
+    local cleaned_input
+    cleaned_input=$(echo "$rules_input" | sed 's/[[:space:]]*,[[:space:]]*/ /g; s/,/ /g')
+    
+    local input_rules=()
+    read -ra input_rules <<< "$cleaned_input"
+    
     local valid_rules=()
 
     for rule_num in "${input_rules[@]}"; do
-        # Убираем пробелы
+        # Убираем лишние пробелы
         rule_num=$(echo "$rule_num" | xargs)
 
+        if [[ -z "$rule_num" ]]; then
+            continue
+        fi
+        
         if [[ "$rule_num" =~ ^[0-9]+$ ]]; then
             # Проверяем, что номер существует в списке
             local found=false
@@ -165,7 +177,7 @@ delete_firewall_rule() {
             if [[ "$found" == "true" ]]; then
                 valid_rules+=("$rule_num")
             else
-                log_warning "Правило #$rule_num не найдено, пропускаем"
+                log_warning "Правило #$rule_num не найдено в списке, пропускаем"
             fi
         else
             log_warning "Некорректный номер: '$rule_num', пропускаем"
@@ -174,11 +186,13 @@ delete_firewall_rule() {
 
     if [[ ${#valid_rules[@]} -eq 0 ]]; then
         log_error "Нет корректных номеров правил для удаления"
-        return 1
+        log_info "Возвращаемся в меню..."
+        sleep 2
+        return 0  # Не выходим из скрипта, а возвращаемся в меню
     fi
 
     # Сортируем номера в обратном порядке для корректного удаления
-    IFS=$'\n' valid_rules=($(sort -nr <<<"${valid_rules[*]}"))
+    mapfile -t valid_rules < <(sort -nr <<<"${valid_rules[*]}")
 
     echo
     log_warning "⚠️ Будут удалены следующие правила: ${valid_rules[*]}"
@@ -381,7 +395,8 @@ restore_firewall_backup() {
     fi
     
     # Создаем резервную копию текущих правил перед восстановлением
-    local current_backup="$backup_dir/ufw_rules_before_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
+    local current_backup
+    current_backup="$backup_dir/ufw_rules_before_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
     if tar -czf "$current_backup" -C /etc/ufw . 2>/dev/null; then
         log_info "Текущие правила сохранены как: $(basename "$current_backup")"
     fi

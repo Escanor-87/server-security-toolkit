@@ -188,7 +188,7 @@ delete_ufw_rules() {
     fi
     
     # Сортируем в убывающем порядке для корректного удаления
-    IFS=$'\n' valid_rules=($(sort -nr <<<"${valid_rules[*]}"))
+    mapfile -t valid_rules < <(sort -nr <<<"${valid_rules[*]}")
     
     echo
     log_info "Будут удалены правила: ${valid_rules[*]}"
@@ -446,6 +446,7 @@ generate_ssh_key() {
             ;;
         2)
             key_file="/root/.ssh/id_rsa"
+            local key_params
             key_params="-t rsa -b 4096"
             log_info "Выбран тип: RSA 4096"
             ;;
@@ -476,9 +477,8 @@ generate_ssh_key() {
         
         # Копируем публичный ключ в буфер обмена и показываем
         local pub_key_file="${key_file}.pub"
-        if [[ -f "$pub_key_file" ]]; then
-            local pub_key_content
-            pub_key_content=$(cat "$pub_key_file")
+        local pub_key_content
+        pub_key_content=$(cat "$pub_key_file")
             
             # Пытаемся скопировать в буфер обмена
             if command -v xclip &>/dev/null; then
@@ -514,93 +514,7 @@ generate_ssh_key() {
 }
 
 # Генерация SSH ключей (старая функция для совместимости)
-generate_ssh_key() {
-    clear
-    log_info "🔑 Генерация SSH ключей"
-    echo
-    
-    local key_name="server_security_key"
-    local key_dir="/root/.ssh"
-    local key_path="$key_dir/$key_name"
-    
-    mkdir -p "$key_dir"
-    
-    # Проверяем существующие ключи
-    local existing_keys=()
-    if [[ -f "$key_path" ]]; then
-        existing_keys+=("$key_path")
-    fi
-    if [[ -f "$key_path.pub" ]]; then
-        existing_keys+=("$key_path.pub")
-    fi
-    
-    if [[ ${#existing_keys[@]} -gt 0 ]]; then
-        log_warning "Найдены существующие ключи:"
-        for key in "${existing_keys[@]}"; do
-            echo "  - $(basename "$key")"
-        done
-        echo
-        read -p "Сгенерировать новые ключи? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            log_info "Генерация отменена"
-            return 0
-        fi
-        
-        # Создаем бекап существующих ключей
-        for key in "${existing_keys[@]}"; do
-            if [[ -f "$key" ]]; then
-                local backup_key="${key}.backup.$(date +%Y%m%d_%H%M%S)"
-                cp "$key" "$backup_key"
-                log_success "Создан бекап: $(basename "$backup_key")"
-            fi
-        done
-    fi
-    
-    log_info "Генерация RSA ключа 4096 бит..."
-    local key_comment
-    key_comment="Server Security Toolkit $(date +%Y-%m-%d)"
-    
-    if ssh-keygen -t rsa -b 4096 -f "$key_path" -N "" -C "$key_comment"; then
-        chmod 600 "$key_path"
-        chmod 644 "$key_path.pub"
-        
-        log_success "SSH ключ сгенерирован успешно!"
-        
-        # Автоматически добавляем ключ в authorized_keys
-        local auth_file="/root/.ssh/authorized_keys"
-        local pubkey_content
-        pubkey_content=$(cat "$key_path.pub")
-        
-        # Убеждаемся, что директория и файл существуют
-        mkdir -p "$(dirname "$auth_file")"
-        touch "$auth_file"
-        
-        if [[ -f "$auth_file" ]] && grep -Fxq "$pubkey_content" "$auth_file"; then
-            log_info "Ключ уже присутствует в authorized_keys"
-        else
-            # Создаем бекап authorized_keys если он существует
-            if [[ -f "$auth_file" ]]; then
-                local auth_backup="${auth_file}.backup.$(date +%Y%m%d_%H%M%S)"
-                cp "$auth_file" "$auth_backup"
-                log_success "Создан бекап authorized_keys: $(basename "$auth_backup")"
-            fi
-            
-            # Добавляем ключ
-            echo "$pubkey_content" >> "$auth_file"
-            chmod 600 "$auth_file"
-            log_success "Ключ добавлен в authorized_keys"
-        fi
-        
-        echo
-        echo "Публичный ключ:"
-        echo "════════════════════════════════════════"
-        cat "$key_path.pub"
-        echo "════════════════════════════════════════"
-    else
-        log_error "Ошибка генерации ключа"
-    fi
-}
+# Удалена - используется новая функция выше
 
 # Импорт публичного ключа в authorized_keys
 install_public_key() {
