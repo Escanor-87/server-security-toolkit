@@ -113,12 +113,14 @@ delete_firewall_rule() {
         return 0
     fi
 
-    # Извлекаем номера правил
+    # Извлекаем номера правил (с учетом пробелов и IPv6 правил)
     local rule_numbers=()
+    local rule_lines=()
+    
     while IFS= read -r line; do
-        # Ищем строки вида [число] в начале строки (с возможными пробелами)
         if [[ "$line" =~ ^[[:space:]]*\[([0-9]+)\] ]]; then
             rule_numbers+=("${BASH_REMATCH[1]}")
+            rule_lines+=("$line")
         fi
     done <<< "$rules_output"
 

@@ -213,11 +213,45 @@ setup_permissions() {
         log_warning "Проблема с алиасом sst"
     fi
     
+    # Настраиваем PATH для zsh пользователей
+    setup_zsh_path
+    
     # Создаем алиасы для fail2ban
     create_fail2ban_aliases
     
     log_success "Права доступа настроены"
     log_info "Создана символическая ссылка: $SYMLINK_PATH"
+}
+
+# Настройка PATH для zsh пользователей
+setup_zsh_path() {
+    log_info "Проверка PATH для zsh..."
+    
+    # Проверяем, установлен ли zsh
+    if ! command -v zsh &>/dev/null; then
+        return 0
+    fi
+    
+    local zshrc_path=""
+    
+    # Ищем .zshrc файл
+    if [[ -f "$HOME/.zshrc" ]]; then
+        zshrc_path="$HOME/.zshrc"
+    elif [[ -f "/root/.zshrc" ]]; then
+        zshrc_path="/root/.zshrc"
+    else
+        log_info "Файл .zshrc не найден, создаем новый"
+        zshrc_path="$HOME/.zshrc"
+        touch "$zshrc_path"
+    fi
+    
+    # Проверяем, есть ли /usr/local/bin в PATH в zsh
+    if ! grep -q "/usr/local/bin" "$zshrc_path" 2>/dev/null; then
+        echo 'export PATH="/usr/local/bin:$PATH"' >> "$zshrc_path"
+        log_success "Добавлен /usr/local/bin в PATH для zsh"
+    else
+        log_info "PATH для zsh уже настроен"
+    fi
 }
 
 # Создание алиасов для fail2ban

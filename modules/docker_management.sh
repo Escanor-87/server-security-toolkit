@@ -78,8 +78,8 @@ update_docker_compose() {
     
     echo
     log_info "Перезапуск контейнеров..."
-    if $compose_cmd up -d; then
-        log_success "Контейнеры перезапущены"
+    if $compose_cmd down && $compose_cmd up -d; then
+        log_success "Контейнеры перезапущены (down + up -d)"
     else
         log_error "Ошибка перезапуска контейнеров"
         return 1
@@ -110,6 +110,7 @@ update_docker_compose() {
                 ;;
         esac
     done
+    return 0  # Возврат в меню после завершения обновления
 }
 
 # Обновление всех найденных проектов

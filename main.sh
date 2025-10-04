@@ -187,35 +187,132 @@ show_menu() {
     echo -n "Введите номер действия [0-8]: "
 }
 
-# Информация о системе - исправляем SC2155
+# Информация о системе - расширенная версия
 show_system_info() {
     show_header
-    log_info "Информация о системе:"
+    log_info "ℹ️  Информация о системе и безопасность"
     echo "════════════════════════════════════════════════════"
-    echo "Hostname: $(hostname)"
-    echo "OS: $(lsb_release -d 2>/dev/null | cut -f2 || echo "Unknown")"
-    echo "Kernel: $(uname -r)"
-    echo "Uptime: $(uptime -p 2>/dev/null || uptime)"
+    
+    # Основная информация о системе
+    echo -e "${BLUE}🖥️  СИСТЕМНАЯ ИНФОРМАЦИЯ:${NC}"
+    echo "════════════════════════════════════════════════════"
+    echo "📍 Hostname: $(hostname)"
+    echo "🐧 OS: $(lsb_release -d 2>/dev/null | cut -f2 || echo "Unknown")"
+    echo "⚙️  Kernel: $(uname -r)"
+    echo "⏱️  Uptime: $(uptime -p 2>/dev/null || uptime)"
+    
+    # CPU и память
+    local cpu_info mem_info
+    cpu_info=$(nproc 2>/dev/null || echo "Unknown")
+    mem_info=$(free -h 2>/dev/null | grep "^Mem:" | awk '{print $3"/"$2}' || echo "Unknown")
+    echo "🧠 CPU cores: $cpu_info"
+    echo "💾 Memory: $mem_info"
+    
+    # Дисковое пространство
+    local disk_info
+    disk_info=$(df -h / 2>/dev/null | tail -1 | awk '{print $3"/"$2" ("$5" used)"}' || echo "Unknown")
+    echo "💿 Disk (/): $disk_info"
+    echo
+    
+    # Статус сервисов
+    echo -e "${BLUE}🔧 СТАТУС СЕРВИСОВ:${NC}"
+    echo "════════════════════════════════════════════════════"
     
     local ssh_status
-    ssh_status=$(systemctl is-active ssh 2>/dev/null || echo "unknown")
-    echo "SSH Service: $ssh_status"
+    ssh_status=$(systemctl is-active ssh 2>/dev/null || systemctl is-active sshd 2>/dev/null || echo "unknown")
+    case $ssh_status in
+        active) echo -e "🔐 SSH Service: ${GREEN}активен${NC}" ;;
+        inactive) echo -e "🔐 SSH Service: ${RED}неактивен${NC}" ;;
+        *) echo -e "🔐 SSH Service: ${YELLOW}$ssh_status${NC}" ;;
+    esac
     
-    # SSH конфигурация
-    if [[ -f /etc/ssh/sshd_config ]]; then
-        local ssh_port
-        local password_auth
-        ssh_port=$(grep "^Port" /etc/ssh/sshd_config | awk '{print $2}' || echo "22")
-        password_auth=$(grep "^PasswordAuthentication" /etc/ssh/sshd_config | awk '{print $2}' || echo "yes")
-        echo "SSH Port: $ssh_port"
-        echo "Password Auth: $password_auth"
+    # fail2ban статус
+    if command -v fail2ban-client &>/dev/null; then
+        if systemctl is-active --quiet fail2ban; then
+            echo -e "🛡️  fail2ban: ${GREEN}активен${NC}"
+        else
+            echo -e "🛡️  fail2ban: ${RED}неактивен${NC}"
+        fi
+    else
+        echo -e "🛡️  fail2ban: ${YELLOW}не установлен${NC}"
     fi
     
-    # UFW статус
-    if command -v ufw &>/dev/null; then
-        echo "UFW Status: $(ufw status | head -1)"
+    # CrowdSec статус
+    if command -v cscli &>/dev/null; then
+        if systemctl is-active --quiet crowdsec; then
+            echo -e "👥 CrowdSec: ${GREEN}активен${NC}"
+        else
+            echo -e "👥 CrowdSec: ${RED}неактивен${NC}"
+        fi
     else
-        echo "UFW Status: not installed"
+        echo -e "👥 CrowdSec: ${YELLOW}не установлен${NC}"
+    fi
+    
+    # Docker статус
+    if command -v docker &>/dev/null; then
+        if systemctl is-active --quiet docker; then
+            echo -e "🐳 Docker: ${GREEN}активен${NC}"
+        else
+            echo -e "🐳 Docker: ${RED}неактивен${NC}"
+        fi
+    else
+        echo -e "🐳 Docker: ${YELLOW}не установлен${NC}"
+    fi
+    echo
+    
+    # SSH конфигурация
+    echo -e "${BLUE}🔐 SSH КОНФИГУРАЦИЯ:${NC}"
+    echo "════════════════════════════════════════════════════"
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        local ssh_port password_auth root_login permit_empty
+        ssh_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
+        password_auth=$(grep "^PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
+        root_login=$(grep "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
+        permit_empty=$(grep "^PermitEmptyPasswords" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "no")
+        
+        echo "🔌 SSH Port: $ssh_port"
+        
+        case $password_auth in
+            no) echo -e "🔑 Password Auth: ${GREEN}отключена${NC}" ;;
+            yes) echo -e "🔑 Password Auth: ${RED}включена${NC}" ;;
+            *) echo -e "🔑 Password Auth: ${YELLOW}$password_auth${NC}" ;;
+        esac
+        
+        case $root_login in
+            no) echo -e "👑 Root Login: ${GREEN}запрещен${NC}" ;;
+            prohibit-password) echo -e "👑 Root Login: ${GREEN}только по ключу${NC}" ;;
+            yes) echo -e "👑 Root Login: ${RED}разрешен${NC}" ;;
+            *) echo -e "👑 Root Login: ${YELLOW}$root_login${NC}" ;;
+        esac
+        
+        case $permit_empty in
+            no) echo -e "🚫 Empty Passwords: ${GREEN}запрещены${NC}" ;;
+            yes) echo -e "🚫 Empty Passwords: ${RED}разрешены${NC}" ;;
+            *) echo -e "🚫 Empty Passwords: ${YELLOW}$permit_empty${NC}" ;;
+        esac
+    else
+        echo -e "${RED}❌ SSH конфигурация не найдена${NC}"
+    fi
+    echo
+    
+    # UFW статус
+    echo -e "${BLUE}🛡️  UFW СТАТУС:${NC}"
+    echo "════════════════════════════════════════════════════"
+    if command -v ufw &>/dev/null; then
+        local ufw_status
+        ufw_status=$(ufw status 2>/dev/null | head -1 | awk '{print $2}')
+        case $ufw_status in
+            active) echo -e "🛡️  UFW Status: ${GREEN}активен${NC}" ;;
+            inactive) echo -e "🛡️  UFW Status: ${RED}неактивен${NC}" ;;
+            *) echo -e "🛡️  UFW Status: ${YELLOW}$ufw_status${NC}" ;;
+        esac
+        
+        # Показать основные правила
+        echo
+        echo "📋 Основные правила:"
+        ufw status numbered 2>/dev/null | grep -E "^\[.*\].*(ALLOW|DENY)" | head -5 || echo "Правила не найдены"
+    else
+        echo -e "🛡️  UFW Status: ${YELLOW}не установлен${NC}"
     fi
     
     echo "════════════════════════════════════════════════════"
@@ -747,36 +844,107 @@ full_security_setup_interactive() {
 
 # Показать сводку безопасности
 show_security_summary() {
-    echo "🔍 Текущее состояние безопасности:"
-    echo "────────────────────────────────────────────────────────────"
+    echo -e "${BLUE}🔍 ТЕКУЩЕЕ СОСТОЯНИЕ БЕЗОПАСНОСТИ:${NC}"
+    echo "═══════════════════════════════════════════════════════════════"
     
-    # SSH статус
-    local ssh_port
-    ssh_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
-    local password_auth
-    password_auth=$(grep "^PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
-    
-    echo "🔐 SSH:"
-    echo "   Порт: $ssh_port"
-    echo "   Парольная авторизация: $password_auth"
+    # SSH статус - расширенная информация
+    echo -e "${GREEN}🔐 SSH КОНФИГУРАЦИЯ:${NC}"
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        local ssh_port password_auth root_login permit_empty
+        ssh_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
+        password_auth=$(grep "^PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
+        root_login=$(grep "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
+        permit_empty=$(grep "^PermitEmptyPasswords" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "no")
+        
+        echo "   🔌 Порт SSH: $ssh_port $([[ "$ssh_port" != "22" ]] && echo "✅ (изменен)" || echo "⚠️  (стандартный)")"
+        
+        case $password_auth in
+            no) echo -e "   🔑 Парольная авторизация: ${GREEN}отключена ✅${NC}" ;;
+            yes) echo -e "   🔑 Парольная авторизация: ${RED}включена ⚠️${NC}" ;;
+            *) echo -e "   🔑 Парольная авторизация: ${YELLOW}$password_auth ❓${NC}" ;;
+        esac
+        
+        case $root_login in
+            no) echo -e "   👑 Root доступ: ${GREEN}запрещен ✅${NC}" ;;
+            prohibit-password) echo -e "   👑 Root доступ: ${GREEN}только по ключу ✅${NC}" ;;
+            yes) echo -e "   👑 Root доступ: ${RED}разрешен ⚠️${NC}" ;;
+            *) echo -e "   👑 Root доступ: ${YELLOW}$root_login ❓${NC}" ;;
+        esac
+        
+        case $permit_empty in
+            no) echo -e "   🚫 Пустые пароли: ${GREEN}запрещены ✅${NC}" ;;
+            yes) echo -e "   🚫 Пустые пароли: ${RED}разрешены ⚠️${NC}" ;;
+            *) echo -e "   🚫 Пустые пароли: ${YELLOW}$permit_empty ❓${NC}" ;;
+        esac
+    else
+        echo -e "   ${RED}❌ SSH конфигурация не найдена${NC}"
+    fi
+    echo
     
     # UFW статус
+    echo -e "${GREEN}🛡️  ФАЙРВОЛ UFW:${NC}"
     if command -v ufw &>/dev/null; then
         local ufw_status
-        ufw_status=$(ufw status | head -1 | awk '{print $2}')
-        echo "🛡️  UFW: $ufw_status"
+        ufw_status=$(ufw status 2>/dev/null | head -1 | awk '{print $2}')
+        case $ufw_status in
+            active) echo -e "   🛡️  Статус: ${GREEN}активен ✅${NC}" ;;
+            inactive) echo -e "   🛡️  Статус: ${RED}неактивен ⚠️${NC}" ;;
+            *) echo -e "   🛡️  Статус: ${YELLOW}$ufw_status ❓${NC}" ;;
+        esac
+        
+        # Количество правил
+        local rule_count
+        rule_count=$(ufw status numbered 2>/dev/null | grep -c "^\s*\[" || echo "0")
+        echo "   📋 Правила: $rule_count $([[ $rule_count -gt 0 ]] && echo "✅" || echo "⚠️")"
+    else
+        echo -e "   🛡️  UFW: ${YELLOW}не установлен${NC}"
     fi
+    echo
+    
+    # Системы защиты
+    echo -e "${GREEN}🔒 СИСТЕМЫ ЗАЩИТЫ:${NC}"
     
     # fail2ban статус
     if command -v fail2ban-client &>/dev/null; then
         if systemctl is-active --quiet fail2ban; then
-            echo "🔒 fail2ban: активен"
+            echo -e "   🔒 fail2ban: ${GREEN}активен ✅${NC}"
+            
+            # Показать заблокированные IP
+            local banned_count
+            banned_count=$(fail2ban-client status sshd 2>/dev/null | grep "Currently banned:" | awk '{print $3}' 2>/dev/null || echo "0")
+            echo "   🚫 Заблокировано IP: $banned_count"
         else
-            echo "🔒 fail2ban: неактивен"
+            echo -e "   🔒 fail2ban: ${RED}неактивен ⚠️${NC}"
         fi
+    else
+        echo -e "   🔒 fail2ban: ${YELLOW}не установлен${NC}"
     fi
     
-    echo "────────────────────────────────────────────────────────────"
+    # CrowdSec статус
+    if command -v cscli &>/dev/null; then
+        if systemctl is-active --quiet crowdsec; then
+            echo -e "   👥 CrowdSec: ${GREEN}активен ✅${NC}"
+        else
+            echo -e "   👥 CrowdSec: ${RED}неактивен ⚠️${NC}"
+        fi
+    else
+        echo -e "   👥 CrowdSec: ${YELLOW}не установлен${NC}"
+    fi
+    
+    # Примечание о компонентах
+    local fail2ban_installed crowdsec_installed
+    fail2ban_installed=$(command -v fail2ban-client &>/dev/null && echo "yes" || echo "no")
+    crowdsec_installed=$(command -v cscli &>/dev/null && echo "yes" || echo "no")
+    
+    if [[ "$fail2ban_installed" == "yes" && "$crowdsec_installed" == "yes" ]]; then
+        echo -e "   ${BLUE}ℹ️  Оба компонента установлены - отличная защита!${NC}"
+    elif [[ "$fail2ban_installed" == "yes" || "$crowdsec_installed" == "yes" ]]; then
+        echo -e "   ${BLUE}ℹ️  Один компонент установлен - базовая защита активна${NC}"
+    else
+        echo -e "   ${YELLOW}⚠️  Рекомендуется установить fail2ban или CrowdSec${NC}"
+    fi
+    
+    echo "═══════════════════════════════════════════════════════════════"
 }
 
 # Главная функция
