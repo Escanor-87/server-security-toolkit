@@ -177,12 +177,13 @@ show_menu() {
     echo "2. 🔐 SSH Security - Настройка безопасности SSH"
     echo "3. 🛡️  Firewall Setup - Настройка файрвола UFW"
     echo "4. 🔧 System Hardening - Укрепление системы"
-    echo "5. ℹ️  System Information - Информация о системе"
-    echo "6. 📋 View Logs - Просмотр логов"
-    echo "7. 🗑️  Uninstall - Удалить Security Toolkit"
+    echo "5. 🐳 Docker Management - Управление Docker контейнерами"
+    echo "6. ℹ️  System Information - Информация о системе"
+    echo "7. 📋 View Logs - Просмотр логов"
+    echo "8. 🗑️  Uninstall - Удалить Security Toolkit"
     echo "0. 🚪 Exit - Выход"
     echo
-    echo -n "Введите номер действия [0-7]: "
+    echo -n "Введите номер действия [0-8]: "
 }
 
 # Информация о системе - исправляем SC2155
@@ -839,14 +840,22 @@ main() {
                 fi
                 ;;
             5) 
+                log_info "Пользователь выбрал: Docker Management"
+                if declare -f docker_management &>/dev/null; then
+                    docker_management
+                else
+                    log_error "Функция docker_management не найдена"
+                fi
+                ;;
+            6) 
                 log_info "Пользователь выбрал: System Information"
                 show_system_info 
                 ;;
-            6) 
+            7) 
                 log_info "Пользователь выбрал: View Logs"
                 view_logs 
                 ;;
-            7) 
+            8) 
                 log_info "Пользователь выбрал: Uninstall"
                 uninstall_toolkit
                 ;;
@@ -862,7 +871,7 @@ main() {
         esac
         
         # Подтверждение только для информационных пунктов
-        if [[ "$choice" == "5" || "$choice" == "6" ]]; then
+        if [[ "$choice" == "6" || "$choice" == "7" ]]; then
             echo
             echo -e "${YELLOW}Нажмите Enter для возврата в главное меню...${NC}"
             read -r
