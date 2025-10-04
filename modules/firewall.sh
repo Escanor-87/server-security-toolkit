@@ -225,23 +225,30 @@ delete_firewall_rule() {
         return 0  # Не выходим из скрипта, а возвращаемся в меню
     fi
 
-    # Подготавливаем список выбранных правил (строки) и сортируем номера в обратном порядке
+    # Подготавливаем список выбранных правил и сортируем номера в обратном порядке
     mapfile -t valid_rules < <(printf '%s\n' "${valid_rules[@]}" | sort -nr)
 
-    local selected_rule_entries=()
+    # Убираем дубликаты номеров, если пользователь указал один номер несколько раз
+    local unique_rules=()
+    declare -A seen_rules=()
     for rule_num in "${valid_rules[@]}"; do
-        for idx in "${!rule_numbers[@]}"; do
-            if [[ "$rule_num" == "${rule_numbers[$idx]}" ]]; then
-                selected_rule_entries+=("${rule_lines[$idx]}")
-                break
-            fi
-        done
+        if [[ -z "${seen_rules[$rule_num]}" ]]; then
+            unique_rules+=("$rule_num")
+            seen_rules[$rule_num]=1
+        fi
+    done
+    valid_rules=("${unique_rules[@]}")
+
+    # Сохраняем оригинальные строки правил для сравнения после сдвига номеров
+    declare -A original_signatures=()
+    for idx in "${!rule_numbers[@]}"; do
+        original_signatures["${rule_numbers[$idx]}"]="${rule_lines[$idx]}"
     done
 
     echo
-    log_warning "⚠️ Будут удалены правила: ${valid_rules[*]}"
+    log_info "Удаляем правила (от большего номера к меньшему): ${valid_rules[*]}"
     echo
-    read -p "Подтвердить удаление? (y/N): " -n 1 -r
+    read -p "Подтвердить удаление всех перечисленных правил? (y/N): " -n 1 -r
     echo
 
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -249,25 +256,56 @@ delete_firewall_rule() {
         return 0
     fi
 
-    # Удаляем правила по одному, каждый раз пересчитывая актуальный номер
     local deleted_count=0
-    for rule_entry in "${selected_rule_entries[@]}"; do
-        local current_number
-        if current_number=$(get_current_rule_number "$rule_entry"); then
-            log_info "Удаление правила #$current_number..."
-            if echo "y" | ufw delete "$current_number" 2>/dev/null; then
-                log_success "Правило удалено: $rule_entry"
-                ((deleted_count++))
-            else
-                log_error "Не удалось удалить правило: $rule_entry"
+    local failed_count=0
+
+    for rule_num in "${valid_rules[@]}"; do
+        local signature="${original_signatures[$rule_num]}"
+        local current_number=""
+
+        # Перечитываем список правил и находим текущий номер по сигнатуре
+        local current_rules
+        current_rules=$(ufw status numbered 2>/dev/null)
+
+        if [[ -z "$current_rules" ]]; then
+            log_error "Не удалось получить текущие правила UFW"
+            ((failed_count++))
+            continue
+        fi
+
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\][[:space:]]*(.*)$ ]]; then
+                local num="${BASH_REMATCH[1]}"
+                local text="${BASH_REMATCH[2]}"
+                text=$(normalize_firewall_rule_text "$text")
+                if [[ "$text" == "$signature" ]]; then
+                    current_number="$num"
+                    break
+                fi
             fi
+        done <<< "$current_rules"
+
+        if [[ -z "$current_number" ]]; then
+            log_warning "Правило #$rule_num (${signature}) не найдено (возможно уже удалено)"
+            continue
+        fi
+
+        log_info "Удаление правила #$current_number (${signature})..."
+        if echo "y" | ufw delete "$current_number" >/dev/null 2>&1; then
+            log_success "Правило удалено: ${signature}"
+            ((deleted_count++))
         else
-            log_warning "Правило уже отсутствует: $rule_entry"
+            log_error "Не удалось удалить правило: ${signature}"
+            ((failed_count++))
         fi
     done
 
     echo
-    log_success "Удалено правил: $deleted_count"
+    if [[ $failed_count -gt 0 ]]; then
+        log_warning "Удалено правил: $deleted_count из ${#valid_rules[@]} (ошибок: $failed_count)"
+    else
+        log_success "Удалено правил: $deleted_count из ${#valid_rules[@]}"
+    fi
 
     echo
     log_info "Текущие правила после удаления:"
