@@ -19,8 +19,10 @@ set_sshd_config_option() {
 
 # Резервная копия SSH конфигурации
 backup_ssh_config() {
+    local backup_dir="$SCRIPT_DIR/Backups"
+    mkdir -p "$backup_dir"
     local backup_file
-    backup_file="${SSH_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
+    backup_file="$backup_dir/sshd_config.backup.$(date +%Y%m%d_%H%M%S)"
     if cp "$SSH_CONFIG" "$backup_file" 2>/dev/null; then
         log_success "Резервная копия: $backup_file"
         return 0
@@ -831,8 +833,10 @@ remove_authorized_key() {
     fi
     
     # Создаем бекап перед удалением
+    local backup_dir="$SCRIPT_DIR/Backups"
+    mkdir -p "$backup_dir"
     local backup_file
-    backup_file="/root/.ssh/authorized_keys.backup.$(date +%Y%m%d_%H%M%S)"
+    backup_file="$backup_dir/authorized_keys.backup.$(date +%Y%m%d_%H%M%S)"
     cp /root/.ssh/authorized_keys "$backup_file"
     log_success "Создан бекап: $backup_file"
     
@@ -887,7 +891,9 @@ show_ssh_status() {
     
     # UFW статус для SSH
     if command -v ufw &>/dev/null; then
-        echo "UFW Status: $(ufw status | head -1)"
+        local ufw_status
+        ufw_status=$(ufw status | head -1 | awk '{print $2}')
+        echo "UFW Status: $ufw_status"
         if ufw status | grep -q "Status: active"; then
             local ssh_rules
             ssh_rules=$(ufw status | grep -E "^$port|^22" | grep -c "tcp" || echo "0")
@@ -1003,8 +1009,9 @@ restore_ssh_config() {
     echo
     
     # Ищем резервные копии SSH конфигурации
+    local backup_dir="$SCRIPT_DIR/Backups"
     local backup_files
-    mapfile -t backup_files < <(find /etc/ssh -name "sshd_config.backup.*" 2>/dev/null | sort -r)
+    mapfile -t backup_files < <(find "$backup_dir" -name "sshd_config.backup.*" 2>/dev/null | sort -r)
     
     if [[ ${#backup_files[@]} -eq 0 ]]; then
         log_warning "Резервные копии SSH конфигурации не найдены"
@@ -1074,8 +1081,9 @@ restore_authorized_keys() {
     echo
     
     # Ищем резервные копии authorized_keys
+    local backup_dir="$SCRIPT_DIR/Backups"
     local backup_files
-    mapfile -t backup_files < <(find /root/.ssh -name "authorized_keys.backup.*" 2>/dev/null | sort -r)
+    mapfile -t backup_files < <(find "$backup_dir" -name "authorized_keys.backup.*" 2>/dev/null | sort -r)
     
     if [[ ${#backup_files[@]} -eq 0 ]]; then
         log_warning "Резервные копии authorized_keys не найдены"
@@ -1144,11 +1152,13 @@ show_backup_files() {
     log_info "📋 Доступные резервные копии"
     echo
     
+    local backup_dir="$SCRIPT_DIR/Backups"
+    
     # SSH конфигурация
     echo -e "${BLUE}🔧 SSH конфигурация (sshd_config):${NC}"
     echo "════════════════════════════════════════════════════"
     local ssh_backups
-    mapfile -t ssh_backups < <(find /etc/ssh -name "sshd_config.backup.*" 2>/dev/null | sort -r)
+    mapfile -t ssh_backups < <(find "$backup_dir" -name "sshd_config.backup.*" 2>/dev/null | sort -r)
     
     if [[ ${#ssh_backups[@]} -eq 0 ]]; then
         echo "Резервные копии не найдены"
@@ -1169,7 +1179,7 @@ show_backup_files() {
     echo -e "${BLUE}🔑 Authorized Keys:${NC}"
     echo "════════════════════════════════════════════════════"
     local key_backups
-    mapfile -t key_backups < <(find /root/.ssh -name "authorized_keys.backup.*" 2>/dev/null | sort -r)
+    mapfile -t key_backups < <(find "$backup_dir" -name "authorized_keys.backup.*" 2>/dev/null | sort -r)
     
     if [[ ${#key_backups[@]} -eq 0 ]]; then
         echo "Резервные копии не найдены"

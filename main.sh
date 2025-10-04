@@ -7,13 +7,15 @@ set -euo pipefail
 
 # Версия скрипта
 VERSION="1.0.0"
-
 # Цвета для вывода
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
+
+# Store original script arguments for restart functionality
+ORIGINAL_ARGS=("$@")
 
 # Директории проекта - исправляем SC2155 и поддерживаем символические ссылки
 if [[ -L "${BASH_SOURCE[0]}" ]]; then
@@ -386,7 +388,36 @@ show_system_info() {
         echo -e "🛡️  UFW Status: ${YELLOW}не установлен${NC}"
     fi
     
+    echo
+    echo -e "${BLUE}🔧 СИСТЕМНАЯ ЗАЩИТА:${NC}"
     echo "════════════════════════════════════════════════════"
+    
+    # Последнее обновление
+    local last_update
+    last_update=$(stat -c %y /var/lib/apt/lists/ 2>/dev/null | head -1 | cut -d' ' -f1 || echo "unknown")
+    echo -e "📅 Последнее обновление: ${BLUE}$last_update${NC}"
+    
+    # Автообновления
+    local auto_updates
+    auto_updates=$(systemctl is-enabled unattended-upgrades 2>/dev/null || echo "not configured")
+    if [[ "$auto_updates" == "enabled" ]]; then
+        echo -e "🔄 Автообновления: ${GREEN}✅ включены${NC}"
+    else
+        echo -e "🔄 Автообновления: ${RED}❌ не настроены${NC}"
+    fi
+    
+    # CrowdSec Bouncer статус
+    local bouncer_status
+    bouncer_status=$(systemctl is-active crowdsec-firewall-bouncer 2>/dev/null || echo "not installed")
+    if [[ "$bouncer_status" == "active" ]]; then
+        echo -e "🚪 CrowdSec Bouncer: ${GREEN}✅ активен${NC}"
+    elif [[ "$bouncer_status" == "inactive" ]]; then
+        echo -e "🚪 CrowdSec Bouncer: ${YELLOW}⚠️ неактивен${NC}"
+    else
+        echo -e "🚪 CrowdSec Bouncer: ${RED}❌ не установлен${NC}"
+    fi
+    
+    echo
 }
 
 # Просмотр логов
@@ -668,9 +699,9 @@ uninstall_toolkit() {
     if [[ "$remove_backups" == "false" ]]; then
         echo
         log_info "📋 Сохраненные резервные копии:"
-        echo "• SSH конфигурация: /etc/ssh/sshd_config.backup.*"
-        echo "• authorized_keys: /root/.ssh/authorized_keys.backup.*"
-        echo "• UFW правила: /etc/ufw/backup/"
+        echo "• SSH конфигурация: $SCRIPT_DIR/Backups/sshd_config.backup.*"
+        echo "• authorized_keys: $SCRIPT_DIR/Backups/authorized_keys.backup.*"
+        echo "• UFW правила: $SCRIPT_DIR/Backups/ufw_rules_*.tar.gz"
     fi
     
     if [[ "$remove_logs" == "false" ]]; then
@@ -1130,8 +1161,31 @@ update_toolkit() {
     echo -e "${BLUE}📋 Изменения в обновлении:${NC}"
     echo "═══════════════════════════════════════════════════════════════"
     git log --oneline --no-merges "$current_commit..$remote_commit" 2>/dev/null || echo "Не удалось получить список изменений"
-    echo "═══════════════════════════════════════════════════════════════"
-    echo
+    # Проверяем наличие локальных изменений
+    local has_local_changes
+    has_local_changes=$(git status --porcelain 2>/dev/null)
+    if [[ -n "$has_local_changes" ]]; then
+        echo
+        log_warning "⚠️  ОБНАРУЖЕНЫ ЛОКАЛЬНЫЕ ИЗМЕНЕНИЯ!"
+        echo
+        echo -e "${YELLOW}У вас есть несохраненные изменения в следующих файлах:${NC}"
+        git status --porcelain | while read -r line; do
+            echo "  $line"
+        done
+        echo
+        echo -e "${RED}ВНИМАНИЕ: Обновление перезапишет все локальные изменения!${NC}"
+        echo
+        read -p "Продолжить обновление с потерей локальных изменений? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Обновление отменено для сохранения локальных изменений"
+            cd "$current_dir" 2>/dev/null || true
+            echo
+            read -p "Нажмите Enter для возврата в главное меню..." -r
+            return 0
+        fi
+        log_warning "Пользователь подтвердил обновление с потерей локальных изменений"
+    fi
     
     read -p "Применить обновление? (y/N): " -n 1 -r
     echo
@@ -1149,6 +1203,11 @@ update_toolkit() {
     # Выполняем обновление
     if git reset --hard origin/main 2>/dev/null; then
         log_success "✅ Обновление успешно применено!"
+        
+        # Восстанавливаем права доступа после обновления
+        chmod +x "$SCRIPT_DIR/main.sh" "$SCRIPT_DIR/modules"/*.sh 2>/dev/null || true
+        log_info "Права доступа восстановлены"
+        
         echo
         
         # Обновляем статус обновлений
@@ -1164,7 +1223,7 @@ update_toolkit() {
         
         # Перезапускаем скрипт
         sleep 3
-        exec "$0" "$@"
+        exec "$0" "${ORIGINAL_ARGS[@]}"
     else
         log_error "❌ Ошибка при применении обновления"
         cd "$current_dir" 2>/dev/null || true

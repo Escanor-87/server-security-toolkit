@@ -75,7 +75,7 @@ case $choice in
         echo "=================================="
         
         # Создаем бекап
-        cp /etc/ssh/sshd_config /etc/ssh/sshd_config.emergency_backup.$(date +%Y%m%d_%H%M%S)
+        cp /etc/ssh/sshd_config "/etc/ssh/sshd_config.emergency_backup.$(date +%Y%m%d_%H%M%S)"
         log_success "Создан бекап конфигурации"
         
         # Устанавливаем порт 22

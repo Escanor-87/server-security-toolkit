@@ -37,7 +37,7 @@ setup_basic_firewall() {
     fi
     
     # Создаем резервную копию текущих правил UFW
-    local backup_dir="/etc/ufw/backup"
+    local backup_dir="$SCRIPT_DIR/Backups"
     local backup_file
     backup_file="$backup_dir/ufw_rules_$(date +%Y%m%d_%H%M%S).tar.gz"
     
@@ -192,7 +192,7 @@ delete_firewall_rule() {
     fi
 
     # Сортируем номера в обратном порядке для корректного удаления
-    mapfile -t valid_rules < <(sort -nr <<<"${valid_rules[*]}")
+    mapfile -t valid_rules < <(printf '%s\n' "${valid_rules[@]}" | sort -nr)
 
     echo
     log_warning "⚠️ Будут удалены следующие правила: ${valid_rules[*]}"
@@ -341,7 +341,7 @@ restore_firewall_backup() {
     log_info "🔙 Восстановление UFW из резервной копии"
     echo
     
-    local backup_dir="/etc/ufw/backup"
+    local backup_dir="$SCRIPT_DIR/Backups"
     if [[ ! -d "$backup_dir" ]]; then
         log_warning "Директория резервных копий не найдена: $backup_dir"
         return 0
