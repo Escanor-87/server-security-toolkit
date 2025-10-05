@@ -71,7 +71,7 @@ configure_fail2ban_basic() {
     fi
     # Определяем тип логирования: файл или только journald
     local has_auth_log="no"
-    if [[ -f "/var/log/auth.log" ]] || grep -qi "debian\|ubuntu" /etc/os-release 2>/dev/null && [[ -n "$(awk -F= '/^ForwardToSyslog/{print $2}' /etc/systemd/journald.conf 2>/dev/null)" ]]; then
+    if [[ -f "/var/log/auth.log" ]]; then
         # если присутствует файл журнала аутентификации — используем его
         has_auth_log="yes"
     fi
@@ -177,9 +177,28 @@ EOF
         fi
         log_success "Обновлен $jail_conf (sshd enabled, port: $ssh_port, has_auth_log=$has_auth_log)"
     fi
-    systemctl restart fail2ban || true
-    sleep 1
-    systemctl is-active --quiet fail2ban && log_success "fail2ban перезапущен" || log_warning "fail2ban не активен"
+    # Перезагружаем/запускаем fail2ban и ждём его активности
+    systemctl daemon-reload || true
+    if systemctl is-enabled --quiet fail2ban 2>/dev/null; then
+        systemctl restart fail2ban || true
+    else
+        systemctl enable --now fail2ban || true
+    fi
+    # Ожидание до 10 секунд, чтобы сервис успел подняться на медленных системах
+    local __tries=0
+    while ! systemctl is-active --quiet fail2ban; do
+        ((__tries++))
+        if (( __tries >= 10 )); then
+            log_warning "fail2ban не активен после перезапуска (истёк таймаут ожидания)"
+            log_info "Последние логи fail2ban:"
+            journalctl -u fail2ban -n 50 --no-pager 2>/dev/null || true
+            break
+        fi
+        sleep 1
+    done
+    if systemctl is-active --quiet fail2ban; then
+        log_success "fail2ban запущен"
+    fi
 }
 
 # Установка и настройка автоматических обновлений
