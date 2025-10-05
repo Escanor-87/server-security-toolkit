@@ -243,7 +243,7 @@ setup_zsh_path() {
     
     # Проверяем, есть ли /usr/local/bin в PATH в zsh
     if ! grep -q "/usr/local/bin" "$zshrc_path" 2>/dev/null; then
-        echo 'export PATH="/usr/local/bin:$PATH"' >> "$zshrc_path"
+        echo "export PATH=\"/usr/local/bin:\$PATH\"" >> "$zshrc_path"
         log_success "Добавлен /usr/local/bin в PATH для zsh"
     else
         log_info "PATH для zsh уже настроен"
@@ -387,7 +387,7 @@ show_installation_info() {
 main() {
     echo -e "${BLUE}"
     echo "╔══════════════════════════════════════════════════╗"
-    echo "║       Server Security Toolkit Installer         ║"
+    echo "║       Server Security Toolkit Installer          ║"
     echo "║            One-line Installation                 ║"
     echo "╚══════════════════════════════════════════════════╝"
     echo -e "${NC}"
