@@ -33,6 +33,7 @@ case "${1:-help}" in
         fi
         
         total_banned=0
+        # shellcheck disable=SC2086
         for jail in $jails; do
             jail=$(echo "$jail" | xargs)  # trim whitespace
             if [[ -n "$jail" ]]; then
