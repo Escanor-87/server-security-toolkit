@@ -460,7 +460,7 @@ analyze_security() {
         # Удаляем дубликаты
         local unique_recs=()
         for rec in "${recommendations[@]}"; do
-            if [[ ! " ${unique_recs[*]} " =~ " $rec " ]]; then
+            if [[ ! " ${unique_recs[*]} " =~ " ${rec} " ]]; then
                 unique_recs+=("$rec")
             fi
         done
@@ -470,8 +470,8 @@ analyze_security() {
         echo
     fi
     
-    # Возвращаем количество предупреждений
-    return ${#warnings[@]}
+    # Всегда возвращаем успешный код (функция информационная)
+    return 0
 }
 
 # Показать справку
