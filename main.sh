@@ -1175,26 +1175,25 @@ update_toolkit() {
         echo
         echo -e "${RED}ВНИМАНИЕ: Обновление перезапишет все локальные изменения!${NC}"
         echo
-        read -p "Продолжить обновление с потерей локальных изменений? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        read -p "Применить обновление? (Enter = да, 0 = отмена): " -r
+        if [[ "$REPLY" == "0" ]]; then
             log_info "Обновление отменено для сохранения локальных изменений"
             cd "$current_dir" 2>/dev/null || true
             echo
             read -p "Нажмите Enter для возврата в главное меню..." -r
             return 0
         fi
-        log_warning "Пользователь подтвердил обновление с потерей локальных изменений"
-    fi
-    
-    read -p "Применить обновление? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Обновление отменено"
-        cd "$current_dir" 2>/dev/null || true
-        echo
-        read -p "Нажмите Enter для возврата в главное меню..." -r
-        return 0
+        log_info "Применение обновления с потерей локальных изменений..."
+    else
+        # Нет локальных изменений - запрашиваем подтверждение
+        read -p "Применить обновление? (Enter = да, 0 = отмена): " -r
+        if [[ "$REPLY" == "0" ]]; then
+            log_info "Обновление отменено"
+            cd "$current_dir" 2>/dev/null || true
+            echo
+            read -p "Нажмите Enter для возврата в главное меню..." -r
+            return 0
+        fi
     fi
     
     echo

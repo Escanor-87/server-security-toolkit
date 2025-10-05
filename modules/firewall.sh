@@ -206,10 +206,9 @@ delete_firewall_rule() {
         echo
         log_warning "⚠️  Будет удалено правило #$rule_input: $rule_signature"
         echo
-        read -p "Подтвердить удаление? (y/N): " -n 1 -r
-        echo
+        read -p "Подтвердить удаление? (Enter = да, 0 = отмена): " -r
 
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        if [[ "$REPLY" == "0" ]]; then
             log_info "Удаление отменено"
             sleep 1
             continue
