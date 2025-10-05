@@ -446,50 +446,22 @@ restore_firewall_backup() {
     # Восстанавливаем правила
     log_info "Восстановление правил UFW из: $(basename "$selected_backup")"
     
-    # Сбрасываем все текущие правила
-    log_warning "Сброс текущих правил UFW..."
-    ufw --force reset >/dev/null 2>&1
-    
-    # Устанавливаем базовые политики
-    ufw default deny incoming >/dev/null 2>&1
-    ufw default allow outgoing >/dev/null 2>&1
-    
-    # Читаем бекап и применяем правила
-    log_info "Применение правил из бекапа..."
-    local rules_applied=0
-    
-    while IFS= read -r line; do
-        # Пропускаем пустые строки и заголовки
-        [[ -z "$line" || "$line" =~ ^(Status|To|--) ]] && continue
-        
-        # Парсим строки формата: [ 1] 443/tcp ALLOW IN Anywhere # HTTPS
-        # или: [ 2] 2222 ALLOW IN 100.67.79.226
-        if [[ "$line" =~ \[[[:space:]]*[0-9]+\][[:space:]]+([0-9]+(/[a-z]+)?)[[:space:]]+ALLOW[[:space:]]+IN[[:space:]]+([^[:space:]#]+) ]]; then
-            local port="${BASH_REMATCH[1]}"
-            local source="${BASH_REMATCH[3]}"
-            
-            # Если источник Anywhere - простое правило
-            if [[ "$source" == "Anywhere" || "$source" =~ \(v6\) ]]; then
-                log_info "Применение: ufw allow $port"
-                ufw allow "$port" >/dev/null 2>&1 && ((rules_applied++))
-            else
-                # Правило с конкретным IP
-                log_info "Применение: ufw allow from $source to any port ${port%/*}"
-                ufw allow from "$source" to any port "${port%/*}" >/dev/null 2>&1 && ((rules_applied++))
-            fi
-        fi
-    done < "$selected_backup"
-    
-    # Включаем UFW
-    log_info "Включение UFW..."
-    if ufw --force enable 2>&1; then
-        log_success "UFW восстановлен. Применено правил: $rules_applied"
-        echo
-        ufw status numbered
-    else
-        log_error "Ошибка включения UFW"
-        return 0
-    fi
+    # ОТКЛЮЧАЕМ ВОССТАНОВЛЕНИЕ - СЛИШКОМ ОПАСНО
+    log_error "⚠️  ФУНКЦИЯ ВОССТАНОВЛЕНИЯ ОТКЛЮЧЕНА"
+    log_warning "Восстановление UFW из бекапа может сломать файрвол"
+    log_info "Используйте ручное восстановление:"
+    echo
+    echo "1. Посмотрите содержимое бекапа:"
+    echo "   cat $selected_backup"
+    echo
+    echo "2. Вручную добавьте правила:"
+    echo "   ufw allow 443/tcp"
+    echo "   ufw allow 23321/tcp"
+    echo "   ufw allow from IP to any port PORT"
+    echo
+    echo "3. Включите UFW:"
+    echo "   ufw --force enable"
+    echo
     
     echo
     read -p "Нажмите Enter для возврата в меню..." -r
