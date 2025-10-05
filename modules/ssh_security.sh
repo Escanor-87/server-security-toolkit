@@ -752,7 +752,8 @@ copy_authorized_key() {
     
     if [[ ! "$key_num" =~ ^[0-9]+$ ]] || [[ "$key_num" -lt 1 ]] || [[ "$key_num" -gt "$max_keys" ]]; then
         log_error "Неверный номер ключа"
-        return 1
+        sleep 2
+        return 0
     fi
     
     local line_num=1
@@ -795,7 +796,8 @@ show_full_key() {
     
     if [[ ! "$key_num" =~ ^[0-9]+$ ]] || [[ "$key_num" -lt 1 ]] || [[ "$key_num" -gt "$max_keys" ]]; then
         log_error "Неверный номер ключа"
-        return 1
+        sleep 2
+        return 0
     fi
     
     local line_num=1
@@ -821,7 +823,8 @@ remove_authorized_key() {
     
     if [[ ! "$key_num" =~ ^[0-9]+$ ]] || [[ "$key_num" -lt 1 ]] || [[ "$key_num" -gt "$max_keys" ]]; then
         log_error "Неверный номер ключа"
-        return 1
+        sleep 2
+        return 0
     fi
     
     # Показываем ключ, который будет удален
@@ -1065,7 +1068,8 @@ restore_ssh_config() {
     
     if [[ ! "$backup_num" =~ ^[0-9]+$ ]] || [[ "$backup_num" -lt 1 ]] || [[ "$backup_num" -gt $((i-1)) ]]; then
         log_error "Неверный номер резервной копии"
-        return 1
+        sleep 2
+        return 0
     fi
     
     local selected_backup="${backup_files[$((backup_num-1))]}"
@@ -1138,7 +1142,8 @@ restore_authorized_keys() {
     
     if [[ ! "$backup_num" =~ ^[0-9]+$ ]] || [[ "$backup_num" -lt 1 ]] || [[ "$backup_num" -gt $((i-1)) ]]; then
         log_error "Неверный номер резервной копии"
-        return 1
+        sleep 2
+        return 0
     fi
     
     local selected_backup="${backup_files[$((backup_num-1))]}"

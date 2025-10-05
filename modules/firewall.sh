@@ -405,7 +405,8 @@ restore_firewall_backup() {
     
     if [[ ! "$backup_num" =~ ^[0-9]+$ ]] || [[ "$backup_num" -lt 1 ]] || [[ "$backup_num" -gt $((i-1)) ]]; then
         log_error "Неверный номер резервной копии"
-        return 1
+        sleep 2
+        return 0
     fi
     
     local selected_backup="${backup_files[$((backup_num-1))]}"
