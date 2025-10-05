@@ -47,10 +47,15 @@ update_docker_compose() {
     local compose_dir
     compose_dir=$(dirname "$compose_file")
     
+    # Сохраняем текущую директорию
+    local original_dir
+    original_dir=$(pwd)
+    
     log_info "🐳 Обновление $(basename "$compose_file") в $compose_dir"
     
     cd "$compose_dir" || {
         log_error "Не удалось перейти в директорию $compose_dir"
+        cd "$original_dir" 2>/dev/null || true
         return 1
     }
     
@@ -117,6 +122,9 @@ update_docker_compose() {
         echo
         read -p "Нажмите Enter для возврата в меню..." -r
     fi
+    
+    # Возвращаемся в исходную директорию
+    cd "$original_dir" 2>/dev/null || true
 }
 
 # Обновление всех найденных проектов
