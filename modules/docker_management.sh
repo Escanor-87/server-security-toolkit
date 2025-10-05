@@ -67,6 +67,7 @@ update_docker_compose() {
         compose_cmd="docker compose"
     else
         log_error "Docker Compose не найден"
+        cd "$original_dir" 2>/dev/null || true
         return 1
     fi
     
@@ -88,6 +89,7 @@ update_docker_compose() {
         log_success "Контейнеры перезапущены"
     else
         log_error "Ошибка перезапуска контейнеров"
+        cd "$original_dir" 2>/dev/null || true
         return 1
     fi
     

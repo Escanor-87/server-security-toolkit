@@ -111,7 +111,7 @@ show_header() {
     clear
     echo -e "${BLUE}"
     echo "╔══════════════════════════════════════════════════╗"
-    echo "║         Server Security Toolkit v${VERSION}         ║"
+    echo "║      Server Security Toolkit v${VERSION} (bookworm)      ║"
     echo "║       Ubuntu/Debian Server Hardening Script      ║"
     echo "╚══════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -230,7 +230,7 @@ show_menu() {
     # Показываем уведомление об обновлении если оно доступно
     if [[ "$UPDATE_AVAILABLE" == "true" ]]; then
         echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${YELLOW}║                        ОБНОВЛЕНИЕ ДОСТУПНО!                      ║${NC}"
+        echo -e "${YELLOW}║                     ОБНОВЛЕНИЕ ДОСТУПНО!                      ║${NC}"
         echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════╝${NC}"
         echo
     fi

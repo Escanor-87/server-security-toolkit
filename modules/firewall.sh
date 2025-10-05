@@ -222,6 +222,11 @@ delete_firewall_rule() {
             continue
         fi
 
+        # Создаём бекап ПЕРЕД удалением правила
+        if declare -f create_backup &>/dev/null; then
+            create_backup "ufw" "/etc/ufw" "before_delete_rule" >/dev/null 2>&1 || log_warning "Не удалось создать бекап"
+        fi
+        
         # Удаление правила
         log_info "Удаление правила #$rule_input..."
         
@@ -230,10 +235,6 @@ delete_firewall_rule() {
         
         if [[ $delete_result -eq 0 ]]; then
             log_success "Правило #$rule_input удалено успешно"
-            # Создаём бекап после удаления правила
-            if declare -f create_backup &>/dev/null; then
-                create_backup "ufw" "/etc/ufw" "after_delete_rule" >/dev/null 2>&1 || log_warning "Не удалось создать бекап"
-            fi
         else
             log_error "Не удалось удалить правило #$rule_input"
         fi
@@ -299,6 +300,11 @@ add_firewall_rule() {
     local comment
     read -p "Комментарий (опционально): " -r comment
     
+    # Создаём бекап ПЕРЕД добавлением правила
+    if declare -f create_backup &>/dev/null; then
+        create_backup "ufw" "/etc/ufw" "before_add_rule" >/dev/null 2>&1 || log_warning "Не удалось создать бекап"
+    fi
+    
     if [[ -n "$protocol" ]]; then
         if [[ -n "$comment" ]]; then
             ufw allow "$port"/"$protocol" comment "$comment"
@@ -314,11 +320,6 @@ add_firewall_rule() {
     fi
     
     log_success "Правило добавлено для порта $port"
-    
-    # Создаём бекап после добавления правила
-    if declare -f create_backup &>/dev/null; then
-        create_backup "ufw" "/etc/ufw" "after_add_rule" >/dev/null 2>&1 || log_warning "Не удалось создать бекап"
-    fi
 }
 
 # Главное меню Firewall модуля
