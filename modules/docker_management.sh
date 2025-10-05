@@ -3,6 +3,8 @@
 # Docker Management Module - DISABLED
 # Модуль временно отключен
 
+declare -a COMPOSE_CMD=()
+
 find_docker_compose_files() {
     # Поиск docker-compose файлов в безопасных директориях
     local roots=("/opt" "/srv" "/var/www" "/docker" "/app" "$HOME" "/root")
@@ -25,12 +27,13 @@ find_docker_compose_files() {
 get_compose_cmd() {
     # Определяем доступную команду docker compose
     if docker compose version &>/dev/null; then
-        echo "docker compose"
+        COMPOSE_CMD=(docker compose)
         return 0
     elif command -v docker-compose &>/dev/null; then
-        echo "docker-compose"
+        COMPOSE_CMD=(docker-compose)
         return 0
     else
+        COMPOSE_CMD=()
         return 1
     fi
 }
@@ -39,27 +42,31 @@ update_docker_compose() {
     local compose_file="$1"
     local quiet="${2:-yes}"   # yes = не задавать вопросы
 
-    local cmd
-    cmd=$(get_compose_cmd) || { log_error "Docker Compose не найден"; return 1; }
+    local -a compose_cmd
+    if ! get_compose_cmd; then
+        log_error "Docker Compose не найден"
+        return 1
+    fi
+    compose_cmd=("${COMPOSE_CMD[@]}")
 
     local dir base
     dir=$(dirname "$compose_file"); base=$(basename "$compose_file")
     log_info "🐳 Обновление $base в $dir"
 
     # Текущие контейнеры проекта (логируем и показываем)
-    exec_logged "compose ps ($base)" "$cmd" -f "$compose_file" ps || true
-    "$cmd" -f "$compose_file" ps || true
+    exec_logged "compose ps ($base)" "${compose_cmd[@]}" -f "$compose_file" ps || true
+    "${compose_cmd[@]}" -f "$compose_file" ps || true
 
     # Pull и перезапуск
     log_info "Загрузка новых образов..."
-    if ! exec_logged "compose pull ($base)" "$cmd" -f "$compose_file" pull; then
+    if ! exec_logged "compose pull ($base)" "${compose_cmd[@]}" -f "$compose_file" pull; then
         log_warning "Не все образы удалось обновить"
     fi
 
     log_info "Перезапуск контейнеров..."
-    exec_logged "compose down ($base)" "$cmd" -f "$compose_file" down
-    exec_logged "compose up -d ($base)" "$cmd" -f "$compose_file" up -d
-    if $cmd -f "$compose_file" ps >/dev/null 2>&1; then
+    exec_logged "compose down ($base)" "${compose_cmd[@]}" -f "$compose_file" down
+    exec_logged "compose up -d ($base)" "${compose_cmd[@]}" -f "$compose_file" up -d
+    if "${compose_cmd[@]}" -f "$compose_file" ps >/dev/null 2>&1; then
         log_success "Контейнеры перезапущены"
     else
         log_error "Ошибка перезапуска контейнеров"
@@ -68,8 +75,8 @@ update_docker_compose() {
 
     # Итоговый статус
     log_info "Статус после обновления:"
-    exec_logged "compose ps (post, $base)" "$cmd" -f "$compose_file" ps || true
-    "$cmd" -f "$compose_file" ps || true
+    exec_logged "compose ps (post, $base)" "${compose_cmd[@]}" -f "$compose_file" ps || true
+    "${compose_cmd[@]}" -f "$compose_file" ps || true
 
     if [[ "$quiet" != "yes" ]]; then
         echo
