@@ -73,7 +73,9 @@ update_ufw_ssh_port() {
             for ((i=${#rules_to_delete[@]}-1; i>=0; i--)); do
                 local rule_num="${rules_to_delete[i]}"
                 log_info "Удаление правила #$rule_num для порта $old_port"
-                echo "y" | ufw delete "$rule_num" 2>/dev/null || true
+                local delete_result=0
+                echo "y" | ufw delete "$rule_num" 2>/dev/null || delete_result=$?
+                [[ $delete_result -eq 0 ]] || log_warning "Не удалось удалить правило #$rule_num"
             done
         else
             # Попытка удалить по прямому указанию порта
@@ -205,7 +207,9 @@ delete_ufw_rules() {
     # Удаляем правила
     for rule_num in "${valid_rules[@]}"; do
         log_info "Удаление правила #$rule_num"
-        echo "y" | ufw delete "$rule_num" 2>/dev/null || log_warning "Не удалось удалить правило #$rule_num"
+        local delete_result=0
+        echo "y" | ufw delete "$rule_num" 2>/dev/null || delete_result=$?
+        [[ $delete_result -eq 0 ]] || log_warning "Не удалось удалить правило #$rule_num"
     done
     
     log_success "Удаление завершено"
