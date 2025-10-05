@@ -51,9 +51,9 @@ check_os() {
             else
                 log_warning "Обнаружен Debian $VERSION_ID. Рекомендуется Debian 12"
                 log_info "Обнаружена ОС: $PRETTY_NAME"
-                read -p "Продолжить установку? (y/N): " -n 1 -r
+                read -p "Продолжить установку? (Enter = да, 0 = отмена): " -r
                 echo
-                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                if [[ "$REPLY" == "0" ]]; then
                     log_info "Установка прервана пользователем"
                     exit 1
                 fi
@@ -62,9 +62,9 @@ check_os() {
         *)
             log_warning "Скрипт оптимизирован для Ubuntu и Debian 12"
             log_info "Обнаружена ОС: $PRETTY_NAME"
-            read -p "Продолжить установку? (y/N): " -n 1 -r
+            read -p "Продолжить установку? (Enter = да, 0 = отмена): " -r
             echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            if [[ "$REPLY" == "0" ]]; then
                 log_info "Установка прервана пользователем"
                 exit 1
             fi
@@ -134,33 +134,21 @@ clone_repository() {
             if check_for_updates; then
                 # Есть обновления - предлагаем обновить
                 while true; do
-                    read -p "Обновить установку до последней версии? (y/N): " -n 1 -r
+                    read -p "Обновить установку до последней версии? (Enter = да, 0 = отмена): " -r
                     echo
-                    case $REPLY in
-                        [Yy])
-                            log_info "Обновление установлено пользователем"
-                            rm -rf "$INSTALL_DIR"
-                            log_info "Старая установка удалена для обновления"
-                            # Возвращаемся в домашнюю директорию перед клонированием
-                            cd "$HOME" || {
-                                log_error "Не удалось перейти в домашнюю директорию"
-                                exit 1
-                            }
-                            # Клонируем репозиторий
-                            git clone "$REPO_URL" "$INSTALL_DIR"
-                            log_success "Репозиторий обновлен в $INSTALL_DIR"
-                            break
-                            ;;
-                        [Nn]|"")
-                            log_info "Используем существующую установку"
-                            # Запускаем существующую версию
-                            log_success "Запуск установленной версии Security Toolkit..."
-                            exec "$INSTALL_DIR/main.sh"
-                            ;;
-                        *)
-                            log_error "Введите 'y' для обновления или 'n' для использования текущей версии"
-                            ;;
-                    esac
+                    if [[ "$REPLY" == "0" ]]; then
+                        log_info "Используем существующую установку"
+                        log_success "Запуск установленной версии Security Toolkit..."
+                        exec "$INSTALL_DIR/main.sh"
+                    else
+                        log_info "Обновление установлено пользователем"
+                        rm -rf "$INSTALL_DIR"
+                        log_info "Старая установка удалена для обновления"
+                        cd "$HOME" || { log_error "Не удалось перейти в домашнюю директорию"; exit 1; }
+                        git clone "$REPO_URL" "$INSTALL_DIR"
+                        log_success "Репозиторий обновлен в $INSTALL_DIR"
+                        break
+                    fi
                 done
             else
                 # Нет обновлений - запускаем существующую версию

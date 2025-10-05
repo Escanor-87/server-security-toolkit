@@ -8,9 +8,9 @@ update_system() {
     log_info "🔄 Обновление системы"
     echo
     
-    read -p "Обновить систему? (y/N): " -n 1 -r
+    read -p "Обновить систему? (Enter = да, 0 = отмена): " -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         return 0
     fi
     
@@ -34,9 +34,9 @@ install_fail2ban() {
         return 0
     fi
     
-    read -p "Установить fail2ban? (y/N): " -n 1 -r
+    read -p "Установить fail2ban? (Enter = да, 0 = отмена): " -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         return 0
     fi
     

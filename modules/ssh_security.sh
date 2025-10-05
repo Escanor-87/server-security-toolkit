@@ -199,10 +199,10 @@ delete_ufw_rules() {
     
     echo
     log_info "Будут удалены правила: ${valid_rules[*]}"
-    read -p "Подтвердить удаление? (y/N): " -n 1 -r
+    read -p "Подтвердить удаление? (Enter = да, 0 = отмена): " -r
     echo
     
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         log_info "Удаление отменено"
         return 0
     fi
@@ -246,10 +246,10 @@ add_ufw_rule() {
         log_info "Комментарий: $comment"
     fi
     
-    read -p "Подтвердить добавление? (y/N): " -n 1 -r
+    read -p "Подтвердить добавление? (Enter = да, 0 = отмена): " -r
     echo
     
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         log_info "Добавление отменено"
         return 0
     fi
@@ -334,9 +334,9 @@ change_ssh_port() {
     echo "   - Старый порт $current_port будет удален из UFW (если не 22)"
     echo "   - Новый порт $new_port будет добавлен в UFW"
     echo
-    read -p "Продолжить изменение порта и обновление UFW? (y/N): " -n 1 -r
+    read -p "Продолжить изменение порта и обновление UFW? (Enter = да, 0 = отмена): " -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         log_info "Операция отменена"
         return 0
     fi
@@ -360,9 +360,9 @@ change_ssh_port() {
     
     # Проверяем конфигурацию перед перезапуском
     if sshd -t 2>/dev/null; then
-        read -p "Перезапустить SSH службу сейчас? (y/N): " -n 1 -r
+        read -p "Перезапустить SSH службу сейчас? (Enter = да, 0 = отмена): " -r
         echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if [[ "$REPLY" != "0" ]]; then
             if systemctl restart ssh; then
                 log_success "SSH служба перезапущена"
                 echo
@@ -403,15 +403,15 @@ disable_password_auth() {
     fi
     
     log_warning "ВНИМАНИЕ! Убедитесь, что SSH ключи настроены!"
-    read -p "Отключить парольную авторизацию? (y/N): " -n 1 -r
+    read -p "Отключить парольную авторизацию? (Enter = да, 0 = отмена): " -r
     echo
     
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
+        log_info "Операция отменена"
+    else
         backup_ssh_config
         set_sshd_config_option "PasswordAuthentication" "no"
         log_success "Парольная авторизация отключена"
-    else
-        log_info "Операция отменена"
     fi
 }
 
@@ -424,14 +424,14 @@ disable_root_login() {
     current_setting=$(grep "^PermitRootLogin" "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' || echo "yes")
     echo "Текущая настройка PermitRootLogin: $current_setting"
     echo
-    read -p "Отключить вход root (PermitRootLogin no)? (y/N): " -n 1 -r
+    read -p "Отключить вход root (PermitRootLogin no)? (Enter = да, 0 = отмена): " -r
     echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
+        log_info "Операция отменена"
+    else
         backup_ssh_config
         set_sshd_config_option "PermitRootLogin" "no"
         log_success "Root вход по SSH отключен"
-    else
-        log_info "Операция отменена"
     fi
 }
 
@@ -857,9 +857,9 @@ remove_authorized_key() {
     log_warning "Будет удален ключ: $key_comment"
     echo "Ключ: ${found_key:0:50}..."
     echo
-    read -p "Подтвердите удаление (y/N): " -n 1 -r
+    read -p "Подтвердите удаление (Enter = да, 0 = отмена): " -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         log_info "Удаление отменено"
         return 0
     fi
@@ -951,10 +951,10 @@ restart_ssh() {
         return 1
     fi
     
-    read -p "Перезапустить SSH службу? (y/N): " -n 1 -r
+    read -p "Перезапустить SSH службу? (Enter = да, 0 = отмена): " -r
     echo
     
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" != "0" ]]; then
         if systemctl restart ssh; then
             log_success "SSH служба перезапущена"
         else
@@ -1081,9 +1081,9 @@ restore_ssh_config() {
     log_warning "⚠️  ВНИМАНИЕ: Это действие перезапишет текущую SSH конфигурацию!"
     echo "Будет восстановлен файл: $(basename "$selected_backup")"
     echo
-    read -p "Продолжить восстановление? (y/N): " -n 1 -r
+    read -p "Продолжить восстановление? (Enter = да, 0 = отмена): " -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         log_info "Восстановление отменено"
         return 0
     fi
@@ -1096,9 +1096,9 @@ restore_ssh_config() {
         log_success "SSH конфигурация восстановлена из $(basename "$selected_backup")"
         log_warning "⚠️  Необходимо перезапустить SSH службу для применения изменений!"
         echo
-        read -p "Перезапустить SSH службу сейчас? (y/N): " -n 1 -r
+        read -p "Перезапустить SSH службу сейчас? (Enter = да, 0 = отмена): " -r
         echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if [[ "$REPLY" != "0" ]]; then
             restart_ssh
         fi
     else
@@ -1155,9 +1155,9 @@ restore_authorized_keys() {
     log_warning "⚠️  ВНИМАНИЕ: Это действие перезапишет текущий authorized_keys!"
     echo "Будет восстановлен файл: $(basename "$selected_backup")"
     echo
-    read -p "Продолжить восстановление? (y/N): " -n 1 -r
+    read -p "Продолжить восстановление? (Enter = да, 0 = отмена): " -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         log_info "Восстановление отменено"
         return 0
     fi
@@ -1304,9 +1304,9 @@ change_user_password() {
     fi
     
     echo
-    read -p "Продолжить изменение пароля для $selected_user? (y/N): " -n 1 -r
+    read -p "Продолжить изменение пароля для $selected_user? (Enter = да, 0 = отмена): " -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ "$REPLY" == "0" ]]; then
         log_info "Изменение пароля отменено"
         return 0
     fi
