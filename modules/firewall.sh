@@ -307,25 +307,30 @@ configure_firewall() {
         echo -e "${BLUE}║         Firewall Setup Menu          ║${NC}"
         echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
         echo
-        echo "1. 📦 Установить UFW"
-        echo "2. 🛡️ Настроить базовый файрвол"
-        echo "3. ➕ Добавить правило"
-        echo "4. 🗑️ Удалить правило"
-        echo "5. 📋 Показать статус"
-        echo "6. 🔙 Восстановить из резервной копии"
+        echo "1. 🛡️  Настроить базовый файрвол"
+        echo -e "${YELLOW}   💡 Сбросит все правила и настроит:${NC}"
+        echo -e "${YELLOW}      • SSH (текущий порт)${NC}"
+        echo -e "${YELLOW}      • HTTP (80) и HTTPS (443)${NC}"
+        echo -e "${YELLOW}      • Deny incoming / Allow outgoing${NC}"
+        echo
+        echo "2. ➕ Добавить правило"
+        echo "3. 🗑️  Удалить правило"
+        echo "4. 📋 Показать статус"
+        echo "5. 🔙 Восстановить из резервной копии"
+        echo "6. 📦 Установить UFW"
         echo "0. ⬅️  Назад в главное меню"
         echo
         read -p "Выберите действие [0-6]: " -n 1 -r choice
         echo
         
         case $choice in
-            1) install_ufw ;;
-            2) setup_basic_firewall ;;
-            3) add_firewall_rule ;;
-            4) delete_firewall_rule 
+            1) setup_basic_firewall ;;
+            2) add_firewall_rule ;;
+            3) delete_firewall_rule 
                continue ;;  # delete_firewall_rule имеет свой read, пропускаем общий
-            5) show_firewall_status ;;
-            6) restore_firewall_backup ;;
+            4) show_firewall_status ;;
+            5) restore_firewall_backup ;;
+            6) install_ufw ;;
             0) return 0 ;;
             *) 
                 log_error "Неверный выбор"
@@ -333,7 +338,7 @@ configure_firewall() {
                 ;;
         esac
         
-        if [[ "$choice" != "0" && "$choice" != "4" ]]; then
+        if [[ "$choice" != "0" && "$choice" != "3" ]]; then
             echo
             read -p "Нажмите Enter для продолжения..." -r
         fi

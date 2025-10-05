@@ -242,7 +242,7 @@ show_menu() {
     echo "3. 🛡️  Firewall Setup - Настройка файрвола UFW"
     echo "4. 🔧 System Hardening - Укрепление системы"
     echo "5. 🐳 Docker Management - Управление Docker контейнерами"
-    echo "6. ℹ️  System Information - Информация о системе"
+    echo "6. 📊 System Status & Security - Статус системы и безопасности"
     echo "7. 📋 View Logs - Просмотр логов"
     
     # Добавляем пункт обновления если обновление доступно
@@ -258,6 +258,101 @@ show_menu() {
         echo
         echo -n "Введите номер действия [0-8]: "
     fi
+}
+
+# Объединённый статус системы и безопасности
+show_unified_status() {
+    clear
+    echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║    System Status & Security          ║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+    echo
+    
+    # UFW Firewall
+    echo -e "${BLUE}🔥 FIREWALL (UFW):${NC}"
+    if command -v ufw &>/dev/null; then
+        local ufw_status
+        ufw_status=$(ufw status 2>/dev/null | head -1 | awk '{print $2}')
+        case $ufw_status in
+            active) echo -e "  Status: ${GREEN}active${NC}" ;;
+            inactive) echo -e "  Status: ${RED}inactive${NC}" ;;
+            *) echo -e "  Status: ${YELLOW}$ufw_status${NC}" ;;
+        esac
+        
+        echo
+        echo "  Правила:"
+        ufw status numbered 2>/dev/null | grep -E "^\[.*\]" || echo "  Правила не найдены"
+    else
+        echo -e "  Status: ${YELLOW}не установлен${NC}"
+    fi
+    echo
+    
+    # Fail2ban
+    echo -e "${BLUE}🛡️  FAIL2BAN:${NC}"
+    if command -v fail2ban-client &>/dev/null; then
+        if systemctl is-active --quiet fail2ban; then
+            echo -e "  Status: ${GREEN}active${NC}"
+            echo "  Jails:"
+            fail2ban-client status 2>/dev/null | grep "Jail list" | sed 's/.*://; s/,/\n/g' | while read -r jail; do
+                jail=$(echo "$jail" | xargs)
+                if [[ -n "$jail" ]]; then
+                    local banned
+                    banned=$(fail2ban-client status "$jail" 2>/dev/null | grep "Currently banned" | awk '{print $NF}')
+                    echo "    • $jail: $banned banned IPs"
+                fi
+            done
+        else
+            echo -e "  Status: ${RED}inactive${NC}"
+        fi
+    else
+        echo -e "  Status: ${YELLOW}не установлен${NC}"
+    fi
+    echo
+    
+    # SSH Security
+    echo -e "${BLUE}🔒 SSH SECURITY:${NC}"
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        local ssh_port password_auth root_login
+        ssh_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
+        password_auth=$(grep "^PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
+        root_login=$(grep "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
+        
+        echo "  • Port: $ssh_port"
+        case $password_auth in
+            no) echo -e "  • Password auth: ${GREEN}disabled${NC}" ;;
+            *) echo -e "  • Password auth: ${RED}enabled${NC}" ;;
+        esac
+        case $root_login in
+            no) echo -e "  • Root login: ${GREEN}no${NC}" ;;
+            prohibit-password) echo -e "  • Root login: ${GREEN}key-only${NC}" ;;
+            *) echo -e "  • Root login: ${RED}yes${NC}" ;;
+        esac
+        
+        # Подсчёт ключей
+        local key_count=0
+        if [[ -f /root/.ssh/authorized_keys ]]; then
+            key_count=$(grep -c "^ssh-" /root/.ssh/authorized_keys 2>/dev/null || echo "0")
+        fi
+        echo "  • Active keys: $key_count"
+    fi
+    echo
+    
+    # Docker
+    echo -e "${BLUE}📦 DOCKER:${NC}"
+    if command -v docker &>/dev/null; then
+        local containers images volumes
+        containers=$(docker ps -q 2>/dev/null | wc -l)
+        images=$(docker images -q 2>/dev/null | wc -l)
+        volumes=$(docker volume ls -q 2>/dev/null | wc -l)
+        echo "  • Running containers: $containers"
+        echo "  • Images: $images"
+        echo "  • Volumes: $volumes"
+    else
+        echo -e "  Status: ${YELLOW}не установлен${NC}"
+    fi
+    
+    echo
+    read -p "Нажмите Enter для возврата..." -r
 }
 
 # Информация о системе - расширенная версия
@@ -1315,8 +1410,8 @@ main() {
                 fi
                 ;;
             6) 
-                log_info "Пользователь выбрал: System Information"
-                show_system_info 
+                log_info "Пользователь выбрал: System Status & Security"
+                show_unified_status 
                 ;;
             7) 
                 log_info "Пользователь выбрал: View Logs"

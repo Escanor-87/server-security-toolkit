@@ -81,7 +81,7 @@ configure_fail2ban_basic() {
         if [[ "$has_auth_log" == "yes" ]]; then
             cat > "$jail_conf" <<EOF
 [DEFAULT]
-bantime = 30m
+bantime = 1h
 findtime = 10m
 maxretry = 2
 
@@ -94,7 +94,7 @@ EOF
         else
             cat > "$jail_conf" <<EOF
 [DEFAULT]
-bantime = 30m
+bantime = 1h
 findtime = 10m
 maxretry = 2
 
@@ -110,12 +110,12 @@ EOF
     else
         # Обновляем DEFAULT секцию с новыми настройками
         if grep -q "^\[DEFAULT\]" "$jail_conf"; then
-            sed -i '/^\[DEFAULT\]/,/^\[/{s/^bantime.*/bantime = 30m/}' "$jail_conf"
+            sed -i '/^\[DEFAULT\]/,/^\[/{s/^bantime.*/bantime = 1h/}' "$jail_conf"
             sed -i '/^\[DEFAULT\]/,/^\[/{s/^maxretry.*/maxretry = 2/}' "$jail_conf"
             sed -i '/^\[DEFAULT\]/,/^\[/{s/^findtime.*/findtime = 10m/}' "$jail_conf"
         else
             # Добавляем DEFAULT секцию в начало файла если её нет
-            sed -i '1i[DEFAULT]\nbantime = 30m\nfindtime = 10m\nmaxretry = 2\n' "$jail_conf"
+            sed -i '1i[DEFAULT]\nbantime = 1h\nfindtime = 10m\nmaxretry = 2\n' "$jail_conf"
         fi
         
         # Идемпотентно гарантируем enabled=true для sshd и обновляем порт
