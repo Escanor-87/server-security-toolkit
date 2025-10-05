@@ -503,6 +503,7 @@ generate_ssh_key() {
     chmod 700 /root/.ssh
     
     log_info "Генерация ключа..."
+    # shellcheck disable=SC2086
     if ssh-keygen $key_params -f "$key_file" -N "" -C "root@$(hostname)"; then
         log_success "Ключ сгенерирован: $key_file"
         

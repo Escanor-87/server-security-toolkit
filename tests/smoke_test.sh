@@ -12,7 +12,11 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 fail() { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
 
 # 1) Check bash version
-bash --version >/dev/null 2>&1 && pass "bash present" || fail "bash not found"
+if bash --version >/dev/null 2>&1; then
+    pass "bash present"
+else
+    fail "bash not found"
+fi
 
 # 2) Check required tools existence (non-root safe)
 for t in ssh systemctl sed grep awk; do

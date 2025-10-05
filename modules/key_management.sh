@@ -6,6 +6,7 @@
 # Проверка загрузки модуля
 if [[ -z "${SCRIPT_DIR:-}" ]]; then
     echo "ERROR: Key Management Module должен загружаться из main.sh"
+    # shellcheck disable=SC2317
     return 1 2>/dev/null || exit 1
 fi
 

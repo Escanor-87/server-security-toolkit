@@ -246,7 +246,7 @@ EOF
             # Убеждаемся, что security обновления включены для Debian
             if ! grep -q "Debian-Security" "$unattended_conf"; then
                 log_info "Настройка security обновлений для Debian..."
-                sed -i '/Unattended-Upgrade::Allowed-Origins {/a\\t"origin=Debian,codename=${distro_codename}-security";' "$unattended_conf"
+                sed -i "/Unattended-Upgrade::Allowed-Origins {/a\\\\\\t\\\"origin=Debian,codename=\${distro_codename}-security\\\";" "$unattended_conf"
             fi
         fi
     fi
@@ -507,7 +507,11 @@ install_crowdsec() {
     if apt update && apt install -y crowdsec; then
         systemctl enable crowdsec || true
         systemctl start crowdsec || true
-        systemctl is-active --quiet crowdsec && log_success "CrowdSec установлен и запущен" || log_warning "CrowdSec установлен, но не активен"
+        if systemctl is-active --quiet crowdsec; then
+            log_success "CrowdSec установлен и запущен"
+        else
+            log_warning "CrowdSec установлен, но не активен"
+        fi
     else
         log_error "Не удалось установить CrowdSec. Возможно, пакет недоступен в репозиториях."
         log_info "См. официальную документацию: https://docs.crowdsec.net/docs/getting_started/install/"
@@ -526,7 +530,11 @@ install_crowdsec_bouncer() {
     if apt update && apt install -y crowdsec-firewall-bouncer-iptables; then
         systemctl enable crowdsec-firewall-bouncer || true
         systemctl start crowdsec-firewall-bouncer || true
-        systemctl is-active --quiet crowdsec-firewall-bouncer && log_success "Bouncer установлен и запущен" || log_warning "Bouncer установлен, но не активен"
+        if systemctl is-active --quiet crowdsec-firewall-bouncer; then
+            log_success "Bouncer установлен и запущен"
+        else
+            log_warning "Bouncer установлен, но не активен"
+        fi
     else
         log_error "Не удалось установить Firewall Bouncer."
         log_info "Если используется nftables, установите пакет crowdsec-firewall-bouncer-nftables"

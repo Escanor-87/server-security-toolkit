@@ -47,18 +47,18 @@ update_docker_compose() {
     log_info "🐳 Обновление $base в $dir"
 
     # Текущие контейнеры проекта (логируем и показываем)
-    exec_logged "compose ps ($base)" $cmd -f "$compose_file" ps || true
-    $cmd -f "$compose_file" ps || true
+    exec_logged "compose ps ($base)" "$cmd" -f "$compose_file" ps || true
+    "$cmd" -f "$compose_file" ps || true
 
     # Pull и перезапуск
     log_info "Загрузка новых образов..."
-    if ! exec_logged "compose pull ($base)" $cmd -f "$compose_file" pull; then
+    if ! exec_logged "compose pull ($base)" "$cmd" -f "$compose_file" pull; then
         log_warning "Не все образы удалось обновить"
     fi
 
     log_info "Перезапуск контейнеров..."
-    exec_logged "compose down ($base)" $cmd -f "$compose_file" down
-    exec_logged "compose up -d ($base)" $cmd -f "$compose_file" up -d
+    exec_logged "compose down ($base)" "$cmd" -f "$compose_file" down
+    exec_logged "compose up -d ($base)" "$cmd" -f "$compose_file" up -d
     if $cmd -f "$compose_file" ps >/dev/null 2>&1; then
         log_success "Контейнеры перезапущены"
     else
@@ -68,8 +68,8 @@ update_docker_compose() {
 
     # Итоговый статус
     log_info "Статус после обновления:"
-    exec_logged "compose ps (post, $base)" $cmd -f "$compose_file" ps || true
-    $cmd -f "$compose_file" ps || true
+    exec_logged "compose ps (post, $base)" "$cmd" -f "$compose_file" ps || true
+    "$cmd" -f "$compose_file" ps || true
 
     if [[ "$quiet" != "yes" ]]; then
         echo
@@ -268,9 +268,9 @@ manage_containers() {
     echo "1) 🔄 Перезапустить  2) ⏹️ Остановить  3) ▶️ Запустить  4) 📋 Логи  0) Назад"; echo
     read -p "Действие [0-4]: " -n 1 -r act; echo
     case $act in
-        1) docker restart "$cname" && log_success "Перезапущен" || log_error "Ошибка" ;;
-        2) docker stop "$cname" && log_success "Остановлен" || log_error "Ошибка" ;;
-        3) docker start "$cname" && log_success "Запущен" || log_error "Ошибка" ;;
+        1) if docker restart "$cname"; then log_success "Перезапущен"; else log_error "Ошибка"; fi ;;
+        2) if docker stop "$cname"; then log_success "Остановлен"; else log_error "Ошибка"; fi ;;
+        3) if docker start "$cname"; then log_success "Запущен"; else log_error "Ошибка"; fi ;;
         4) docker logs --tail 100 "$cname"; echo; read -p "Enter для возврата..." -r ;;
         0) return 0 ;;
         *) log_error "Неверный выбор" ;;
