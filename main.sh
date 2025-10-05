@@ -111,7 +111,7 @@ show_header() {
     clear
     echo -e "${BLUE}"
     echo "╔══════════════════════════════════════════════════╗"
-    echo "║      Server Security Toolkit v${VERSION} (bookworm)      ║"
+    echo "║         Server Security Toolkit v${VERSION}         ║"
     echo "║       Ubuntu/Debian Server Hardening Script      ║"
     echo "╚══════════════════════════════════════════════════╝"
     echo -e "${NC}"

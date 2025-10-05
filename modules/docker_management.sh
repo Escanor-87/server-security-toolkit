@@ -43,23 +43,13 @@ find_docker_compose_files() {
 # Обновление одного Docker Compose проекта
 update_docker_compose() {
     local compose_file="$1"
-    local skip_cleanup="${2:-no}"  # Второй параметр - пропустить очистку образов
+    local skip_cleanup="${2:-no}"
     local compose_dir
     compose_dir=$(dirname "$compose_file")
     
-    # Сохраняем текущую директорию
-    local original_dir
-    original_dir=$(pwd)
-    
     log_info "🐳 Обновление $(basename "$compose_file") в $compose_dir"
     
-    cd "$compose_dir" || {
-        log_error "Не удалось перейти в директорию $compose_dir"
-        cd "$original_dir" 2>/dev/null || true
-        return 1
-    }
-    
-    # Проверяем, что Docker Compose доступен
+    # Определяем команду Docker Compose
     local compose_cmd=""
     if command -v docker-compose &>/dev/null; then
         compose_cmd="docker-compose"
@@ -67,37 +57,33 @@ update_docker_compose() {
         compose_cmd="docker compose"
     else
         log_error "Docker Compose не найден"
-        cd "$original_dir" 2>/dev/null || true
         return 1
     fi
     
+    # Используем -f для указания файла вместо cd
     echo
     log_info "Текущие контейнеры:"
-    $compose_cmd ps
+    $compose_cmd -f "$compose_file" ps
     
     echo
     log_info "Загрузка новых образов..."
-    if $compose_cmd pull; then
-        log_success "Образы обновлены"
-    else
-        log_warning "Не все образы удалось обновить"
-    fi
+    $compose_cmd -f "$compose_file" pull || log_warning "Не все образы удалось обновить"
     
     echo
     log_info "Перезапуск контейнеров..."
-    if $compose_cmd down && $compose_cmd up -d; then
-        log_success "Контейнеры перезапущены"
-    else
+    $compose_cmd -f "$compose_file" down
+    $compose_cmd -f "$compose_file" up -d || {
         log_error "Ошибка перезапуска контейнеров"
-        cd "$original_dir" 2>/dev/null || true
         return 1
-    fi
+    }
+    
+    log_success "Контейнеры перезапущены"
     
     echo
     log_info "Статус после обновления:"
-    $compose_cmd ps
+    $compose_cmd -f "$compose_file" ps
     
-    # Очистка неиспользуемых образов (только если не пропускаем)
+    # Очистка образов только для одиночного обновления
     if [[ "$skip_cleanup" != "yes" ]]; then
         echo
         while true; do
@@ -115,18 +101,16 @@ update_docker_compose() {
                     break
                     ;;
                 *)
-                    log_warning "Введите 'y' для очистки образов или 'n' для пропуска"
+                    log_warning "Введите 'y' для очистки или 'n' для пропуска"
                     continue
                     ;;
             esac
         done
-        
         echo
         read -p "Нажмите Enter для возврата в меню..." -r
     fi
     
-    # Возвращаемся в исходную директорию
-    cd "$original_dir" 2>/dev/null || true
+    return 0
 }
 
 # Обновление всех найденных проектов
