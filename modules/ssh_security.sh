@@ -49,7 +49,6 @@ update_ufw_ssh_port() {
     fi
     
     log_info "Обновление правил UFW..."
-    
     # Удаляем все существующие SSH правила для старого порта
     if [[ "$old_port" != "$new_port" ]]; then
         log_info "Поиск и удаление старых SSH правил для порта $old_port"
@@ -57,12 +56,16 @@ update_ufw_ssh_port() {
         # Удаляем правила по номеру порта (различные варианты)
         local rules_to_delete=()
         
-        # Ищем правила с портом и комментарием SSH
+        # Ищем правила с корректным извлечением номера [ n] и фильтром по порту/ALLOW
         while IFS= read -r line; do
-            if [[ "$line" =~ \[.*\].*$old_port/tcp.*SSH ]] || [[ "$line" =~ \[.*\].*$old_port/tcp ]] && [[ "$line" =~ ALLOW ]]; then
-                local rule_num
-                rule_num=$(echo "$line" | grep -o '^\[[0-9]*\]' | tr -d '[]')
-                if [[ -n "$rule_num" ]]; then
+            # Извлекаем номер правила и тело строки после него
+            if [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\][[:space:]]*(.*)$ ]]; then
+                local rule_num="${BASH_REMATCH[1]}"
+                local rule_body="${BASH_REMATCH[2]}"
+                # Убираем пометку (v6) для унификации
+                rule_body="${rule_body// (v6)/}"
+                # Совпадение по порту (22 или 22/tcp) и наличие ALLOW
+                if [[ "$rule_body" =~ (^|[[:space:]])${old_port}(/tcp)?([[:space:]]|$) ]] && [[ "$rule_body" == *"ALLOW"* ]]; then
                     rules_to_delete+=("$rule_num")
                 fi
             fi
