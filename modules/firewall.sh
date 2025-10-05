@@ -450,7 +450,8 @@ restore_firewall_backup() {
     log_info "Создание резервной копии текущих правил..."
     local current_backup_dir="$SCRIPT_DIR/Backups/ufw"
     mkdir -p "$current_backup_dir"
-    local current_backup="$current_backup_dir/before_restore_$(date +%Y%m%d_%H%M%S).txt"
+    local current_backup
+    current_backup="$current_backup_dir/before_restore_$(date +%Y%m%d_%H%M%S).txt"
     ufw status numbered > "$current_backup" 2>/dev/null
     
     # Восстанавливаем правила
