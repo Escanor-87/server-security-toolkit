@@ -110,10 +110,10 @@ log_config_change() {
 show_header() {
     clear
     echo -e "${BLUE}"
-    echo "╔══════════════════════════════════════════════════╗"
-    echo "║         Server Security Toolkit v${VERSION}         ║"
-    echo "║       Ubuntu/Debian Server Hardening Script      ║"
-    echo "╚══════════════════════════════════════════════════╝"
+    echo "╔════════════════════════════════════════════════╗"
+    echo "║      Server Security Toolkit v${VERSION}       ║"
+    echo "║    Ubuntu/Debian Server Hardening Script      ║"
+    echo "╚════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo
 }

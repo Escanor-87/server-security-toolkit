@@ -44,84 +44,38 @@ find_docker_compose_files() {
 update_docker_compose() {
     local compose_file="$1"
     local skip_cleanup="${2:-no}"
-    local compose_dir
-    compose_dir=$(dirname "$compose_file")
     
-    log_info "🐳 Обновление $(basename "$compose_file") в $compose_dir"
-    log_info "DEBUG: compose_file=$compose_file"
-    log_info "DEBUG: pwd=$(pwd)"
+    log_info "🐳 Обновление: $compose_file"
     
-    # Определяем команду Docker Compose
-    local compose_cmd=""
-    if command -v docker-compose &>/dev/null; then
-        compose_cmd="docker-compose"
-        log_info "DEBUG: Используется docker-compose"
-    elif docker compose version &>/dev/null; then
-        compose_cmd="docker compose"
-        log_info "DEBUG: Используется docker compose"
-    else
-        log_error "Docker Compose не найден"
-        return 1
+    # Определяем команду
+    local compose_cmd="docker compose"
+    if ! docker compose version &>/dev/null; then
+        if command -v docker-compose &>/dev/null; then
+            compose_cmd="docker-compose"
+        else
+            log_error "Docker Compose не найден"
+            return 1
+        fi
     fi
     
-    # Используем -f для указания файла вместо cd
+    # Простое обновление
     echo
-    log_info "Текущие контейнеры:"
-    if ! $compose_cmd -f "$compose_file" ps 2>&1; then
-        log_error "Ошибка получения статуса контейнеров"
-        return 1
-    fi
+    log_info "Pull образов..."
+    $compose_cmd -f "$compose_file" pull || true
     
+    log_info "Перезапуск..."
+    $compose_cmd -f "$compose_file" down
+    $compose_cmd -f "$compose_file" up -d
+    
+    log_success "✅ Обновлено"
+    
+    # Показываем статус
     echo
-    log_info "Загрузка новых образов..."
-    if ! $compose_cmd -f "$compose_file" pull 2>&1; then
-        log_warning "Не все образы удалось обновить"
-    fi
+    $compose_cmd -f "$compose_file" ps
     
-    echo
-    log_info "Остановка контейнеров..."
-    if ! $compose_cmd -f "$compose_file" down 2>&1; then
-        log_error "Ошибка остановки контейнеров"
-        return 1
-    fi
-    
-    log_info "Запуск контейнеров..."
-    if ! $compose_cmd -f "$compose_file" up -d 2>&1; then
-        log_error "Ошибка запуска контейнеров"
-        return 1
-    fi
-    
-    log_success "Контейнеры перезапущены"
-    
-    echo
-    log_info "Статус после обновления:"
-    $compose_cmd -f "$compose_file" ps 2>&1 || log_warning "Не удалось получить статус"
-    
-    # Очистка образов только для одиночного обновления
     if [[ "$skip_cleanup" != "yes" ]]; then
         echo
-        while true; do
-            read -p "Очистить неиспользуемые Docker образы? (y/N): " -n 1 -r
-            echo
-            case $REPLY in
-                [Yy])
-                    log_info "Очистка неиспользуемых образов..."
-                    docker image prune -f
-                    log_success "Очистка завершена"
-                    break
-                    ;;
-                [Nn]|"")
-                    log_info "Очистка образов пропущена"
-                    break
-                    ;;
-                *)
-                    log_warning "Введите 'y' для очистки или 'n' для пропуска"
-                    continue
-                    ;;
-            esac
-        done
-        echo
-        read -p "Нажмите Enter для возврата в меню..." -r
+        read -p "Нажмите Enter..." -r
     fi
     
     return 0
