@@ -63,22 +63,22 @@ setup_basic_firewall() {
     ufw default deny incoming
     ufw default allow outgoing
     
-    # SSH порт
+    # SSH порт (безопасное определение, не ломается при pipefail)
     local ssh_port
-    ssh_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
+    ssh_port=$(awk '/^Port[[:space:]]+[0-9]+/{p=$2} END{if(p)print p; else print 22}' /etc/ssh/sshd_config 2>/dev/null)
     log_info "Разрешение SSH на порту $ssh_port..."
-    ufw allow "$ssh_port"/tcp
+    exec_logged "ufw allow $ssh_port/tcp" ufw allow "$ssh_port"/tcp || true
     
     # Веб-серверы
     log_info "Разрешение HTTP/HTTPS..."
-    ufw allow 80/tcp
-    ufw allow 443/tcp
+    exec_logged "ufw allow 80/tcp" ufw allow 80/tcp || true
+    exec_logged "ufw allow 443/tcp" ufw allow 443/tcp || true
     
     log_info "Включение UFW..."
-    ufw --force enable
+    exec_logged "ufw --force enable" ufw --force enable || true
     
     log_success "Базовый файрвол настроен"
-    ufw status verbose
+    exec_logged "ufw status verbose" ufw status verbose || true
 }
 
 # Показать статус UFW
@@ -440,7 +440,9 @@ restore_firewall_backup() {
     
     # Создаём резервную копию текущих правил перед восстановлением
     log_info "Создание резервной копии текущих правил..."
-    local current_backup="$SCRIPT_DIR/Backups/ufw/before_restore_$(date +%Y%m%d_%H%M%S).txt"
+    local current_backup_dir="$SCRIPT_DIR/Backups/ufw"
+    mkdir -p "$current_backup_dir"
+    local current_backup="$current_backup_dir/before_restore_$(date +%Y%m%d_%H%M%S).txt"
     ufw status numbered > "$current_backup" 2>/dev/null
     
     # Восстанавливаем правила
@@ -475,7 +477,12 @@ restore_firewall_backup() {
             local source="${BASH_REMATCH[4]}"
             if [[ "$source" == "Anywhere" || "$source" == "Anywhere (v6)" ]]; then
                 log_info "Применение: ufw allow $port"
-                if exec_logged "ufw allow $port" ufw allow "$port"; then ((rules_applied++)); fi
+                # Избегаем дублирования fail-safe SSH
+                if [[ "$port" != "$ssh_port" && "$port" != "$ssh_port/tcp" ]]; then
+                    if exec_logged "ufw allow $port" ufw allow "$port"; then ((rules_applied++)); fi
+                else
+                    log_info "Правило SSH уже применено fail-safe, пропускаем"
+                fi
             else
                 # Удаляем протокол для конструкции "to any port"
                 local ponly

@@ -60,6 +60,13 @@ rotate_logs() {
     fi
 }
 
+# Устанавливаем ловушки для диагностики неожиданных выходов
+install_traps() {
+    set -E
+    trap 'rc=$?; log_error "ERR trap: cmd=\"$BASH_COMMAND\" rc=$rc at ${BASH_SOURCE[0]}:$LINENO (func=${FUNCNAME[*]})"' ERR
+    trap 'rc=$?; log_info "EXIT trap: rc=$rc. Если rc!=0 — смотрите предыдущие [COMMAND]/[ERROR] записи."' EXIT
+}
+
 # Безопасный запуск действий меню: не даёт всему скрипту завершиться при ошибке
 run_action() {
     local desc="$1"; shift
@@ -1405,6 +1412,7 @@ main() {
     check_root
     check_os
     check_requirements
+    install_traps
     
     # Загружаем модули
     log_info "Загрузка модулей..."
@@ -1424,7 +1432,7 @@ main() {
     # Главный цикл
     while true; do
         show_menu
-        read -n 1 -r choice
+        read -n 1 -r choice || choice=""
         echo
         
         case $choice in
