@@ -460,7 +460,8 @@ analyze_security() {
         # Удаляем дубликаты
         local unique_recs=()
         for rec in "${recommendations[@]}"; do
-            if [[ ! " ${unique_recs[*]} " =~ " $rec " ]]; then
+            local pattern=" $rec "
+            if [[ ! " ${unique_recs[*]} " =~ $pattern ]]; then
                 unique_recs+=("$rec")
             fi
         done
