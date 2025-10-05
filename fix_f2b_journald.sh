@@ -41,7 +41,7 @@ fi
 
 # Создаем резервную копию
 if [[ -f /etc/fail2ban/jail.local ]]; then
-    cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.backup.$(date +%Y%m%d_%H%M%S)
+    cp /etc/fail2ban/jail.local "/etc/fail2ban/jail.local.backup.$(date +%Y%m%d_%H%M%S)"
     echo -e "${GREEN}✓ Создана резервная копия jail.local${NC}"
 fi
 

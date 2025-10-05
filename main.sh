@@ -69,6 +69,31 @@ install_traps() {
     trap 'rc=$?; if (( rc != 0 )); then log_info "EXIT trap: rc=$rc. Если rc!=0 — смотрите предыдущие [COMMAND]/[ERROR] записи."; fi' EXIT
 }
 
+# Отображение сводки изменений перед применением
+show_changes_summary() {
+    local title="$1"
+    shift
+    local changes=("$@")
+    
+    echo
+    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║       Сводка предстоящих изменений               ║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════════════════╝${NC}"
+    echo
+    echo -e "${YELLOW}$title${NC}"
+    echo
+    
+    if [[ ${#changes[@]} -gt 0 ]]; then
+        for change in "${changes[@]}"; do
+            echo -e "  ${GREEN}→${NC} $change"
+        done
+    else
+        echo -e "  ${YELLOW}Нет изменений${NC}"
+    fi
+    
+    echo
+}
+
 # Безопасный запуск действий меню: не даёт всему скрипту завершиться при ошибке
 run_action() {
     local desc="$1"; shift
@@ -77,7 +102,8 @@ run_action() {
     local rc=$?
     set -e
     if (( rc != 0 )); then
-        log_error "$desc завершилось с кодом $rc"
+        log_error "Действие '$desc' завершилось с кодом $rc"
+        return $rc
     fi
     return 0
 }
@@ -199,6 +225,18 @@ log_error() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo -e "${RED}[$timestamp] [ERROR]${NC} $1" | tee -a "$LOG_FILE"
+}
+
+# Простой прогресс-индикатор
+show_progress() {
+    local message="$1"
+    local duration=${2:-3}
+    echo -ne "${BLUE}$message${NC}"
+    for ((i=0; i<duration; i++)); do
+        sleep 1
+        echo -n "."
+    done
+    echo -e " ${GREEN}✓${NC}"
 }
 
 # Запуск команды с расширенным логированием: команда, код выхода, STDOUT/STDERR
@@ -414,6 +452,116 @@ show_menu() {
         echo
         echo -n "Выберите [0-8/q/h]: "
     fi
+}
+
+# Анализ безопасности и рекомендации
+analyze_security() {
+    local recommendations=()
+    local warnings=()
+    local ok_items=()
+    
+    # Проверка SSH
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        local ssh_port password_auth root_login
+        ssh_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
+        password_auth=$(grep "^PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
+        root_login=$(grep "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
+        
+        if [[ "$ssh_port" == "22" ]]; then
+            warnings+=("SSH использует стандартный порт 22")
+            recommendations+=("2. SSH Security → Смена SSH порта")
+        else
+            ok_items+=("SSH порт: $ssh_port (изменён)")
+        fi
+        
+        if [[ "$password_auth" == "yes" ]]; then
+            warnings+=("Парольная авторизация SSH включена")
+            recommendations+=("2. SSH Security → Отключение парольной авторизации")
+        else
+            ok_items+=("Парольная авторизация: отключена")
+        fi
+        
+        if [[ "$root_login" == "yes" ]]; then
+            warnings+=("Root доступ по SSH разрешён")
+            recommendations+=("2. SSH Security → Отключение root доступа")
+        else
+            ok_items+=("Root доступ: запрещён/ограничен")
+        fi
+        
+        # Проверка наличия SSH ключей
+        if [[ ! -f /root/.ssh/authorized_keys ]] || [[ ! -s /root/.ssh/authorized_keys ]]; then
+            warnings+=("Нет SSH ключей в authorized_keys")
+            recommendations+=("2. SSH Security → Импорт/генерация ключей")
+        else
+            local key_count
+            key_count=$(grep -c "^ssh-" /root/.ssh/authorized_keys 2>/dev/null || echo "0")
+            ok_items+=("SSH ключи: $key_count")
+        fi
+    fi
+    
+    # Проверка UFW
+    if command -v ufw &>/dev/null; then
+        local ufw_status
+        ufw_status=$(ufw status 2>/dev/null | head -1 | awk '{print $2}')
+        if [[ "$ufw_status" != "active" ]]; then
+            warnings+=("Firewall UFW не активен")
+            recommendations+=("3. Firewall Setup → Базовая настройка")
+        else
+            ok_items+=("UFW: активен")
+        fi
+    else
+        warnings+=("UFW не установлен")
+        recommendations+=("3. Firewall Setup → Установка UFW")
+    fi
+    
+    # Проверка fail2ban
+    if command -v fail2ban-client &>/dev/null; then
+        if systemctl is-active --quiet fail2ban; then
+            ok_items+=("fail2ban: активен")
+        else
+            warnings+=("fail2ban установлен, но не запущен")
+            recommendations+=("4. System Hardening → Настройка fail2ban")
+        fi
+    else
+        warnings+=("fail2ban не установлен")
+        recommendations+=("4. System Hardening → Установка fail2ban")
+    fi
+    
+    # Вывод результатов
+    echo
+    if [[ ${#ok_items[@]} -gt 0 ]]; then
+        echo -e "${GREEN}✅ Всё хорошо:${NC}"
+        for item in "${ok_items[@]}"; do
+            echo -e "  ${GREEN}•${NC} $item"
+        done
+        echo
+    fi
+    
+    if [[ ${#warnings[@]} -gt 0 ]]; then
+        echo -e "${YELLOW}⚠️  Требует внимания:${NC}"
+        for warning in "${warnings[@]}"; do
+            echo -e "  ${YELLOW}•${NC} $warning"
+        done
+        echo
+    fi
+    
+    if [[ ${#recommendations[@]} -gt 0 ]]; then
+        echo -e "${BLUE}💡 Рекомендуемые действия:${NC}"
+        # Удаляем дубликаты
+        local unique_recs=()
+        for rec in "${recommendations[@]}"; do
+            if [[ ! " ${unique_recs[*]} " =~ " ${rec} " ]]; then
+                unique_recs+=("$rec")
+            fi
+        done
+        for rec in "${unique_recs[@]}"; do
+            echo -e "  ${BLUE}→${NC} $rec"
+        done
+        echo
+    fi
+    
+    # Возвращаем количество предупреждений
+    return ${#warnings[@]}
 }
 
 # Показать справку
@@ -818,22 +966,21 @@ view_logs() {
                     continue
                     ;;
             esac
+            
+            # Автовозврат в меню логов с возможностью выхода
+            if [[ "$choice" != "0" ]]; then
+                echo
+                echo -e "${YELLOW}[Enter=продолжить, q=выход в главное меню]${NC}"
+                read -n 1 -r key
+                if [[ "$key" == "q" ]] || [[ "$key" == "Q" ]]; then
+                    return 0
+                fi
+            fi
         else
             log_warning "📄 Файл лога пуст или не найден: $LOG_FILE"
             echo
-            echo "1. 🔙 Назад в главное меню"
-            echo
-            read -p "Нажмите 1 для возврата: " -n 1 -r choice
-            echo
-            if [[ "$choice" == "1" ]]; then
-                return 0
-            fi
-            continue
-        fi
-        
-        if [[ "$choice" != "0" ]]; then
-            echo
-            read -p "Нажмите Enter для продолжения..." -r
+            read -p "Нажмите Enter для возврата..." -r
+            return 0
         fi
     done
 }
@@ -1563,6 +1710,8 @@ main() {
                 log_info "Пользователь выбрал: System Status & Security"
                 show_unified_status
                 echo
+                # Показываем рекомендации
+                analyze_security
                 echo -e "${YELLOW}Нажмите Enter для возврата...${NC}"
                 read -r
                 ;;
