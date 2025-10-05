@@ -229,6 +229,10 @@ delete_firewall_rule() {
         echo "y" | ufw delete "$rule_input" >/dev/null 2>&1 || delete_result=$?
         
         if [[ $delete_result -eq 0 ]]; then
+            # Создаём бекап после удаления правила
+            if declare -f create_backup &>/dev/null; then
+                create_backup "ufw" "/etc/ufw" "after_delete_rule" >/dev/null 2>&1
+            fi
             log_success "Правило #$rule_input удалено успешно"
         else
             log_error "Не удалось удалить правило #$rule_input"
@@ -304,6 +308,11 @@ add_firewall_rule() {
         fi
     fi
     
+    # Создаём бекап после добавления правила
+    if declare -f create_backup &>/dev/null; then
+        create_backup "ufw" "/etc/ufw" "after_add_rule" >/dev/null 2>&1
+    fi
+    
     log_success "Правило добавлено для порта $port"
 }
 
@@ -316,7 +325,6 @@ configure_firewall() {
         echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
         echo
         echo "1. 🛡️  Настроить базовый файрвол"
-        echo
         echo "2. ➕ Добавить правило"
         echo "3. 🗑️  Удалить правило"
         echo "4. 📋 Показать статус"

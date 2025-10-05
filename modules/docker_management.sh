@@ -111,6 +111,9 @@ update_docker_compose() {
                 ;;
         esac
     done
+    
+    echo
+    read -p "Нажмите Enter для возврата в меню..." -r
 }
 
 # Обновление всех найденных проектов
@@ -535,6 +538,8 @@ manage_containers() {
                     log_info "Логи контейнера $container_name:"
                     echo "════════════════════════════════════════"
                     docker logs --tail 50 "$container_name"
+                    echo
+                    read -p "Нажмите Enter для возврата в меню..." -r
                     ;;
                 5)
                     log_info "Вход в контейнер $container_name..."
