@@ -88,7 +88,8 @@ show_firewall_status() {
     echo "════════════════════════════════════════"
     
     if command -v ufw &>/dev/null; then
-        ufw status verbose
+        exec_logged "ufw status verbose" ufw status verbose || true
+        ufw status verbose || true
     else
         echo "UFW не установлен"
     fi
@@ -239,7 +240,12 @@ delete_firewall_rule() {
         log_info "Удаление правила #$rule_input..."
         
         local delete_result=0
-        echo "y" | ufw delete "$rule_input" >/dev/null 2>&1 || delete_result=$?
+        # Безопасное подтверждение удаления, с логированием
+        if ! exec_logged "ufw delete $rule_input" bash -lc "printf 'y\n' | ufw delete $rule_input"; then
+            delete_result=$?
+        else
+            delete_result=0
+        fi
         
         if [[ $delete_result -eq 0 ]]; then
             log_success "Правило #$rule_input удалено успешно"
@@ -323,15 +329,15 @@ add_firewall_rule() {
     
     if [[ -n "$protocol" ]]; then
         if [[ -n "$comment" ]]; then
-            ufw allow "$port"/"$protocol" comment "$comment"
+            exec_logged "ufw allow $port/$protocol comment \"$comment\"" ufw allow "$port"/"$protocol" comment "$comment" || true
         else
-            ufw allow "$port"/"$protocol"
+            exec_logged "ufw allow $port/$protocol" ufw allow "$port"/"$protocol" || true
         fi
     else
         if [[ -n "$comment" ]]; then
-            ufw allow "$port" comment "$comment"
+            exec_logged "ufw allow $port comment \"$comment\"" ufw allow "$port" comment "$comment" || true
         else
-            ufw allow "$port"
+            exec_logged "ufw allow $port" ufw allow "$port" || true
         fi
     fi
     

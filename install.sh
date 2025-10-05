@@ -195,36 +195,49 @@ setup_permissions() {
         log_info "Удален старый алиас ss"
     fi
     
-    # Создаем символическую ссылку для удобства
+    # Удаляем старые бинари/ссылки, будем создавать обёртку-скрипт
     if [[ -L "$SYMLINK_PATH" ]] || [[ -f "$SYMLINK_PATH" ]]; then
-        rm "$SYMLINK_PATH"
+        rm -f "$SYMLINK_PATH"
     fi
-    ln -s "$INSTALL_DIR/main.sh" "$SYMLINK_PATH"
     
     # Создаем короткий алиас sst
     local short_alias="/usr/local/bin/sst"
     if [[ -L "$short_alias" ]] || [[ -f "$short_alias" ]]; then
-        rm "$short_alias"
+        rm -f "$short_alias"
     fi
-    ln -s "$INSTALL_DIR/main.sh" "$short_alias"
 
     # Дополнительные системные ссылки (fallback)
     if [[ -w "/usr/bin" ]]; then
-        ln -sf "$INSTALL_DIR/main.sh" /usr/bin/sst 2>/dev/null || true
-        ln -sf "$INSTALL_DIR/main.sh" /usr/bin/security-toolkit 2>/dev/null || true
+        ln -sf "/usr/local/bin/sst" /usr/bin/sst 2>/dev/null || true
+        ln -sf "/usr/local/bin/security-toolkit" /usr/bin/security-toolkit 2>/dev/null || true
     fi
     
-    # Проверяем, что символические ссылки работают
-    if [[ -L "$SYMLINK_PATH" ]] && [[ -f "$(readlink -f "$SYMLINK_PATH")" ]]; then
-        log_success "Символическая ссылка security-toolkit создана и проверена"
-    else
-        log_warning "Проблема с символической ссылкой security-toolkit"
+    # Обёртки-скрипты для более надёжного запуска через bash
+    if [[ -w "/usr/local/bin" ]]; then
+        rm -f /usr/local/bin/security-toolkit /usr/local/bin/sst 2>/dev/null || true
+        cat > /usr/local/bin/security-toolkit << EOF
+#!/bin/bash
+exec "$INSTALL_DIR/main.sh" "$@"
+EOF
+        chmod 755 /usr/local/bin/security-toolkit
+        
+        cat > /usr/local/bin/sst << EOF
+#!/bin/bash
+exec "$INSTALL_DIR/main.sh" "$@"
+EOF
+        chmod 755 /usr/local/bin/sst
     fi
     
-    if [[ -L "$short_alias" ]] && [[ -f "$(readlink -f "$short_alias")" ]]; then
-        log_success "Короткий алиас sst создан и проверен"
+    # Проверяем, что обёртки доступны
+    if [[ -x "/usr/local/bin/security-toolkit" ]]; then
+        log_success "CLI security-toolkit установлен"
     else
-        log_warning "Проблема с алиасом sst"
+        log_warning "CLI security-toolkit недоступен"
+    fi
+    if [[ -x "/usr/local/bin/sst" ]]; then
+        log_success "CLI sst установлен"
+    else
+        log_warning "CLI sst недоступен"
     fi
     
     # Гарантируем, что /usr/local/bin в PATH для shell-пользователей

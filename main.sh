@@ -7,7 +7,9 @@ set -euo pipefail
 
 # Версия скрипта (автоматически на основе числа коммитов)
 # Формат: 0.<десятки коммитов>.<единицы коммитов>, напр. 68 коммитов -> 0.6.8
-VERSION=$(git rev-list --count HEAD 2>/dev/null | awk '{printf "0.%d.%d", int($1/10), $1%10}')
+# Безопасно при отсутствии .git (не падаем под set -euo pipefail)
+commit_count=$( (git rev-list --count HEAD 2>/dev/null) || echo 0 )
+VERSION=$(awk -v n="$commit_count" 'BEGIN{printf "0.%d.%d", int(n/10), n%10}')
 if [[ -z "$VERSION" ]]; then VERSION="0.0.0"; fi
 # Цвета для вывода
 readonly RED='\033[0;31m'
@@ -126,12 +128,22 @@ update_toolkit() {
     chmod +x tests/*.sh 2>/dev/null || true
     log_info "Права доступа восстановлены"
 
-    # Восстанавливаем симлинки
-    local symlink_main="/usr/local/bin/security-toolkit"
-    local symlink_short="/usr/local/bin/sst"
-    rm -f "$symlink_main" "$symlink_short" 2>/dev/null || true
-    ln -s "$SCRIPT_DIR/main.sh" "$symlink_main" 2>/dev/null || true
-    ln -s "$SCRIPT_DIR/main.sh" "$symlink_short" 2>/dev/null || true
+    # Удаляем старые файлы/ссылки и создаём обёртки CLI в /usr/local/bin
+    local cli_main="/usr/local/bin/security-toolkit"
+    local cli_short="/usr/local/bin/sst"
+    rm -f "$cli_main" "$cli_short" 2>/dev/null || true
+    if [[ -w "/usr/local/bin" ]]; then
+        cat > "$cli_main" << EOF
+#!/bin/bash
+exec "$SCRIPT_DIR/main.sh" "$@"
+EOF
+        chmod 755 "$cli_main" 2>/dev/null || true
+        cat > "$cli_short" << EOF
+#!/bin/bash
+exec "$SCRIPT_DIR/main.sh" "$@"
+EOF
+        chmod 755 "$cli_short" 2>/dev/null || true
+    fi
 
     # Гарантируем, что /usr/local/bin в PATH для всех shell'ов
     if [[ -d "/etc/profile.d" ]]; then
@@ -141,10 +153,25 @@ EOF
         chmod 644 /etc/profile.d/security-toolkit-path.sh 2>/dev/null || true
     fi
 
-    # Fallback симлинки в /usr/bin (если доступно)
+    # Fallback симлинки в /usr/bin (если доступно) на обёртки
     if [[ -w "/usr/bin" ]]; then
-        ln -sf "$SCRIPT_DIR/main.sh" /usr/bin/sst 2>/dev/null || true
-        ln -sf "$SCRIPT_DIR/main.sh" /usr/bin/security-toolkit 2>/dev/null || true
+        ln -sf "/usr/local/bin/sst" /usr/bin/sst 2>/dev/null || true
+        ln -sf "/usr/local/bin/security-toolkit" /usr/bin/security-toolkit 2>/dev/null || true
+    fi
+
+    # Обёртки-скрипты для более надёжного запуска через bash
+    if [[ -w "/usr/local/bin" ]]; then
+        cat > /usr/local/bin/security-toolkit << EOF
+#!/bin/bash
+exec "$SCRIPT_DIR/main.sh" "$@"
+EOF
+        chmod 755 /usr/local/bin/security-toolkit 2>/dev/null || true
+        
+        cat > /usr/local/bin/sst << EOF
+#!/bin/bash
+exec "$SCRIPT_DIR/main.sh" "$@"
+EOF
+        chmod 755 /usr/local/bin/sst 2>/dev/null || true
     fi
 
     popd >/dev/null || true
