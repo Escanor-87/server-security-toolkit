@@ -158,7 +158,7 @@ case $choice in
         echo "=========================="
         
         # Ищем бекапы
-        backup_files=($(find /etc/ssh -name "sshd_config.backup.*" 2>/dev/null | sort -r))
+        mapfile -t backup_files < <(find /etc/ssh -name "sshd_config.backup.*" 2>/dev/null | sort -r)
         
         if [[ ${#backup_files[@]} -eq 0 ]]; then
             log_warning "Резервные копии SSH конфигурации не найдены"
@@ -175,7 +175,7 @@ case $choice in
                 selected_backup="${backup_files[$((backup_num-1))]}"
                 
                 # Создаем бекап текущего файла
-                cp /etc/ssh/sshd_config /etc/ssh/sshd_config.before_restore.$(date +%Y%m%d_%H%M%S)
+                cp /etc/ssh/sshd_config "/etc/ssh/sshd_config.before_restore.$(date +%Y%m%d_%H%M%S)"
                 
                 # Восстанавливаем
                 cp "$selected_backup" /etc/ssh/sshd_config
