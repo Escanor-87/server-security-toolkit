@@ -291,7 +291,12 @@ delete_firewall_rule() {
         fi
 
         log_info "Удаление правила #$current_number (${signature})..."
-        if echo "y" | ufw delete "$current_number" >/dev/null 2>&1; then
+        
+        # Выполняем удаление с явной обработкой кода возврата (для set -e)
+        local delete_result=0
+        echo "y" | ufw delete "$current_number" >/dev/null 2>&1 || delete_result=$?
+        
+        if [[ $delete_result -eq 0 ]]; then
             log_success "Правило удалено: ${signature}"
             ((deleted_count++))
         else
