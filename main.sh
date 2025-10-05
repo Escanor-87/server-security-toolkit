@@ -1408,7 +1408,7 @@ UPDATE_AVAILABLE=false
 update_toolkit() {
     clear
     echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║           🔄 ОБНОВЛЕНИЕ SECURITY TOOLKIT          ║${NC}"
+    echo -e "${BLUE}║           🔄 ОБНОВЛЕНИЕ SECURITY TOOLKIT         ║${NC}"
     echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
     echo
     
@@ -1533,14 +1533,16 @@ main() {
     rotate_logs >/dev/null 2>&1
     
     # Тихое логирование технической информации (только в файл)
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] 🚀 Запуск Server Security Toolkit v$VERSION" >> "$LOG_FILE"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Скрипт запущен из: ${BASH_SOURCE[0]}" >> "$LOG_FILE"
-    if [[ -L "${BASH_SOURCE[0]}" ]]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Символическая ссылка: $(readlink -f "${BASH_SOURCE[0]}")" >> "$LOG_FILE"
-    fi
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Рабочая директория: $SCRIPT_DIR" >> "$LOG_FILE"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Директория модулей: $MODULES_DIR" >> "$LOG_FILE"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Файл логов: $LOG_FILE" >> "$LOG_FILE"
+    {
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] 🚀 Запуск Server Security Toolkit v$VERSION"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Скрипт запущен из: ${BASH_SOURCE[0]}"
+        if [[ -L "${BASH_SOURCE[0]}" ]]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Символическая ссылка: $(readlink -f "${BASH_SOURCE[0]}")"
+        fi
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Рабочая директория: $SCRIPT_DIR"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Директория модулей: $MODULES_DIR"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Файл логов: $LOG_FILE"
+    } >> "$LOG_FILE"
     
     # Тихие проверки (ошибки все равно выведутся если есть)
     check_root >/dev/null 2>&1 || { log_error "Требуются права root. Запустите: sudo sst"; exit 1; }
