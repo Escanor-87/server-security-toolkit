@@ -121,205 +121,115 @@ get_current_rule_number() {
     return 1
 }
 
-# Удалить правило
+# Удалить правило (с циклом для множественного удаления)
 delete_firewall_rule() {
-    clear
-    log_info "🗑️ Удаление правила файрвола"
-    echo
+    while true; do
+        clear
+        log_info "🗑️ Удаление правила файрвола"
+        echo
 
-    if ! command -v ufw &>/dev/null; then
-        log_error "UFW не установлен"
-        return 1
-    fi
-
-    echo -e "${BLUE}Текущие правила UFW:${NC}"
-    echo "════════════════════════════════════════"
-    ufw status numbered 2>/dev/null || echo "UFW неактивен"
-    echo "════════════════════════════════════════"
-    echo
-
-    # Получаем список правил с номерами
-    local rules_output
-    rules_output=$(ufw status numbered 2>/dev/null)
-
-    if [[ -z "$rules_output" ]] || [[ "$rules_output" == *"Status: inactive"* ]]; then
-        log_warning "UFW неактивен или нет правил"
-        return 0
-    fi
-
-    # Извлекаем номера правил - исправленная логика
-    local rule_numbers=()
-    local rule_lines=()
-    
-    # Получаем строки только с номерами правил
-    while IFS= read -r line; do
-        # Ищем строки вида "[число]" в начале строки (с учетом пробелов внутри скобок)
-        if [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\][[:space:]]*(.*)$ ]]; then
-            local rule_num="${BASH_REMATCH[1]}"
-            local rule_text="${BASH_REMATCH[2]}"
-            rule_numbers+=("$rule_num")
-            rule_lines+=("$(normalize_firewall_rule_text "$rule_text")")
+        if ! command -v ufw &>/dev/null; then
+            log_error "UFW не установлен"
+            return 1
         fi
-    done <<< "$rules_output"
 
-    if [[ ${#rule_numbers[@]} -eq 0 ]]; then
-        log_info "Нет правил для удаления"
-        return 0
-    fi
+        echo -e "${BLUE}Текущие правила UFW:${NC}"
+        echo "════════════════════════════════════════"
+        ufw status numbered 2>/dev/null || echo "UFW неактивен"
+        echo "════════════════════════════════════════"
+        echo
 
-    echo "Введите номера правил для удаления:"
-    echo "Разделители: пробел, запятая или запятая с пробелом"
-    echo "Примеры: 1 3 5    или    1,3,5    или    1, 3, 5"
-    echo
+        # Получаем список правил с номерами
+        local rules_output
+        rules_output=$(ufw status numbered 2>/dev/null)
 
-    local rules_input
-    read -p "Номера правил: " -r rules_input
-
-    if [[ -z "$rules_input" ]]; then
-        log_info "Удаление отменено"
-        return 0
-    fi
-
-    # Разбираем введенные номера - поддержка разных разделителей
-    # Заменяем запятые с пробелами и без на пробелы, затем разбиваем по пробелам
-    local cleaned_input
-    cleaned_input=$(echo "$rules_input" | sed 's/[[:space:]]*,[[:space:]]*/ /g; s/,/ /g')
-    
-    local input_rules=()
-    read -ra input_rules <<< "$cleaned_input"
-    
-    local valid_rules=()
-
-    for rule_num in "${input_rules[@]}"; do
-        # Убираем лишние пробелы
-        rule_num=$(echo "$rule_num" | xargs)
-
-        if [[ -z "$rule_num" ]]; then
-            continue
+        if [[ -z "$rules_output" ]] || [[ "$rules_output" == *"Status: inactive"* ]]; then
+            log_warning "UFW неактивен или нет правил"
+            return 0
         fi
+
+        # Извлекаем номера правил
+        local rule_numbers=()
+        local rule_lines=()
         
-        if [[ "$rule_num" =~ ^[0-9]+$ ]]; then
-            # Проверяем, что номер существует в списке
-            local found=false
-            for existing_rule in "${rule_numbers[@]}"; do
-                if [[ "$rule_num" == "$existing_rule" ]]; then
-                    found=true
-                    break
-                fi
-            done
-
-            if [[ "$found" == "true" ]]; then
-                valid_rules+=("$rule_num")
-            else
-                log_warning "Правило #$rule_num не найдено в списке, пропускаем"
-            fi
-        else
-            log_warning "Некорректный номер: '$rule_num', пропускаем"
-        fi
-    done
-
-    if [[ ${#valid_rules[@]} -eq 0 ]]; then
-        log_error "Нет корректных номеров правил для удаления"
-        log_info "Возвращаемся в меню..."
-        sleep 2
-        return 0  # Не выходим из скрипта, а возвращаемся в меню
-    fi
-
-    # Подготавливаем список выбранных правил и сортируем номера в обратном порядке
-    mapfile -t valid_rules < <(printf '%s\n' "${valid_rules[@]}" | sort -nr)
-
-    # Убираем дубликаты номеров, если пользователь указал один номер несколько раз
-    local unique_rules=()
-    declare -A seen_rules=()
-    for rule_num in "${valid_rules[@]}"; do
-        if [[ -z "${seen_rules[$rule_num]+x}" ]]; then
-            unique_rules+=("$rule_num")
-            seen_rules[$rule_num]=1
-        fi
-    done
-    valid_rules=("${unique_rules[@]}")
-
-    # Сохраняем оригинальные строки правил для сравнения после сдвига номеров
-    declare -A original_signatures=()
-    for idx in "${!rule_numbers[@]}"; do
-        original_signatures["${rule_numbers[$idx]}"]="${rule_lines[$idx]}"
-    done
-
-    echo
-    log_info "Удаляем правила (от большего номера к меньшему): ${valid_rules[*]}"
-    echo
-    read -p "Подтвердить удаление всех перечисленных правил? (y/N): " -n 1 -r
-    echo
-
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Удаление отменено"
-        return 0
-    fi
-
-    local deleted_count=0
-    local failed_count=0
-
-    for rule_num in "${valid_rules[@]}"; do
-        local signature="${original_signatures[$rule_num]-}"
-        local current_number=""
-
-        # Перечитываем список правил и находим текущий номер по сигнатуре
-        local current_rules
-        current_rules=$(ufw status numbered 2>/dev/null)
-
-        if [[ -z "$current_rules" ]]; then
-            log_error "Не удалось получить текущие правила UFW"
-            ((failed_count++))
-            continue
-        fi
-
         while IFS= read -r line; do
             if [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\][[:space:]]*(.*)$ ]]; then
-                local num="${BASH_REMATCH[1]}"
-                local text="${BASH_REMATCH[2]}"
-                text=$(normalize_firewall_rule_text "$text")
-                if [[ "$text" == "$signature" ]]; then
-                    current_number="$num"
-                    break
-                fi
+                local rule_num="${BASH_REMATCH[1]}"
+                local rule_text="${BASH_REMATCH[2]}"
+                rule_numbers+=("$rule_num")
+                rule_lines+=("$(normalize_firewall_rule_text "$rule_text")")
             fi
-        done <<< "$current_rules"
+        done <<< "$rules_output"
 
-        if [[ -z "$current_number" ]]; then
-            log_warning "Правило #$rule_num (${signature}) не найдено (возможно уже удалено)"
+        if [[ ${#rule_numbers[@]} -eq 0 ]]; then
+            log_info "Нет правил для удаления"
+            return 0
+        fi
+
+        echo "Введите номер правила для удаления (или 0 для выхода в меню):"
+        echo
+
+        local rule_input
+        read -p "Номер правила: " -r rule_input
+
+        # Выход в меню
+        if [[ "$rule_input" == "0" ]] || [[ -z "$rule_input" ]]; then
+            log_info "Возврат в меню файрвола"
+            return 0
+        fi
+
+        # Проверка корректности ввода
+        if [[ ! "$rule_input" =~ ^[0-9]+$ ]]; then
+            log_error "Некорректный номер правила: '$rule_input'"
+            sleep 2
             continue
         fi
 
-        log_info "Удаление правила #$current_number (${signature})..."
+        # Проверка существования правила
+        local found=false
+        local rule_signature=""
+        for idx in "${!rule_numbers[@]}"; do
+            if [[ "$rule_input" == "${rule_numbers[$idx]}" ]]; then
+                found=true
+                rule_signature="${rule_lines[$idx]}"
+                break
+            fi
+        done
+
+        if [[ "$found" == "false" ]]; then
+            log_error "Правило #$rule_input не найдено в списке"
+            sleep 2
+            continue
+        fi
+
+        # Подтверждение удаления
+        echo
+        log_warning "⚠️  Будет удалено правило #$rule_input: $rule_signature"
+        echo
+        read -p "Подтвердить удаление? (y/N): " -n 1 -r
+        echo
+
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Удаление отменено"
+            sleep 1
+            continue
+        fi
+
+        # Удаление правила
+        log_info "Удаление правила #$rule_input..."
         
-        # Выполняем удаление с явной обработкой кода возврата (для set -e)
         local delete_result=0
-        echo "y" | ufw delete "$current_number" >/dev/null 2>&1 || delete_result=$?
+        echo "y" | ufw delete "$rule_input" >/dev/null 2>&1 || delete_result=$?
         
         if [[ $delete_result -eq 0 ]]; then
-            log_success "Правило удалено: ${signature}"
-            ((deleted_count++))
+            log_success "Правило #$rule_input удалено успешно"
         else
-            log_error "Не удалось удалить правило: ${signature}"
-            ((failed_count++))
+            log_error "Не удалось удалить правило #$rule_input"
         fi
+
+        echo
+        sleep 1
     done
-
-    echo
-    if [[ $failed_count -gt 0 ]]; then
-        log_warning "Удалено правил: $deleted_count из ${#valid_rules[@]} (ошибок: $failed_count)"
-    else
-        log_success "Удалено правил: $deleted_count из ${#valid_rules[@]}"
-    fi
-
-    echo
-    log_info "Текущие правила после удаления:"
-    echo "════════════════════════════════════════"
-    ufw status numbered
-    echo "════════════════════════════════════════"
-
-    echo
-    read -p "Нажмите Enter для возврата в меню файрвола..." -r
 }
 add_firewall_rule() {
     clear
