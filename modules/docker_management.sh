@@ -43,6 +43,7 @@ find_docker_compose_files() {
 # Обновление одного Docker Compose проекта
 update_docker_compose() {
     local compose_file="$1"
+    local skip_cleanup="${2:-no}"  # Второй параметр - пропустить очистку образов
     local compose_dir
     compose_dir=$(dirname "$compose_file")
     
@@ -89,31 +90,33 @@ update_docker_compose() {
     log_info "Статус после обновления:"
     $compose_cmd ps
     
-    # Очистка неиспользуемых образов
-    echo
-    while true; do
-        read -p "Очистить неиспользуемые Docker образы? (y/N): " -n 1 -r
+    # Очистка неиспользуемых образов (только если не пропускаем)
+    if [[ "$skip_cleanup" != "yes" ]]; then
         echo
-        case $REPLY in
-            [Yy])
-                log_info "Очистка неиспользуемых образов..."
-                docker image prune -f
-                log_success "Очистка завершена"
-                break
-                ;;
-            [Nn]|"")
-                log_info "Очистка образов пропущена"
-                break
-                ;;
-            *)
-                log_warning "Введите 'y' для очистки образов или 'n' для пропуска"
-                continue
-                ;;
-        esac
-    done
-    
-    echo
-    read -p "Нажмите Enter для возврата в меню..." -r
+        while true; do
+            read -p "Очистить неиспользуемые Docker образы? (y/N): " -n 1 -r
+            echo
+            case $REPLY in
+                [Yy])
+                    log_info "Очистка неиспользуемых образов..."
+                    docker image prune -f
+                    log_success "Очистка завершена"
+                    break
+                    ;;
+                [Nn]|"")
+                    log_info "Очистка образов пропущена"
+                    break
+                    ;;
+                *)
+                    log_warning "Введите 'y' для очистки образов или 'n' для пропуска"
+                    continue
+                    ;;
+            esac
+        done
+        
+        echo
+        read -p "Нажмите Enter для возврата в меню..." -r
+    fi
 }
 
 # Обновление всех найденных проектов
@@ -137,7 +140,8 @@ update_all_docker_projects() {
         log_info "Обработка: $compose_file"
         echo "════════════════════════════════════════════════════════════════"
         
-        if update_docker_compose "$compose_file"; then
+        # Пропускаем очистку образов при массовом обновлении
+        if update_docker_compose "$compose_file" "yes"; then
             ((updated_count++))
             log_success "✅ Проект обновлен: $(dirname "$compose_file")"
         else
@@ -160,7 +164,34 @@ update_all_docker_projects() {
     echo "• Всего проектов: ${#compose_files[@]}"
     echo "════════════════════════════════════════════════════════════════"
     
-    return 0  # Возврат в меню Docker Management
+    # Предлагаем очистку образов после всех обновлений
+    if [[ $updated_count -gt 0 ]]; then
+        echo
+        while true; do
+            read -p "Очистить неиспользуемые Docker образы? (y/N): " -n 1 -r
+            echo
+            case $REPLY in
+                [Yy])
+                    log_info "Очистка неиспользуемых образов..."
+                    docker image prune -f
+                    log_success "Очистка завершена"
+                    break
+                    ;;
+                [Nn]|"")
+                    log_info "Очистка образов пропущена"
+                    break
+                    ;;
+                *)
+                    log_warning "Введите 'y' для очистки образов или 'n' для пропуска"
+                    continue
+                    ;;
+            esac
+        done
+    fi
+    
+    echo
+    read -p "Нажмите Enter для возврата в меню..." -r
+    return 0
 }
 
 # Показать Docker статус

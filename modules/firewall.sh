@@ -368,15 +368,15 @@ restore_firewall_backup() {
     log_info "🔙 Восстановление UFW из резервной копии"
     echo
     
-    local backup_dir="$SCRIPT_DIR/Backups"
+    local backup_dir="$SCRIPT_DIR/Backups/ufw"
     if [[ ! -d "$backup_dir" ]]; then
         log_warning "Директория резервных копий не найдена: $backup_dir"
         return 0
     fi
     
-    # Ищем резервные копии UFW
+    # Ищем резервные копии UFW (новый формат и старый)
     local backup_files
-    mapfile -t backup_files < <(find "$backup_dir" -name "ufw_rules_*.tar.gz" 2>/dev/null | sort -r)
+    mapfile -t backup_files < <(find "$backup_dir" -type f \( -name "*.tar.gz" -o -name "after_*" \) 2>/dev/null | sort -r)
     
     if [[ ${#backup_files[@]} -eq 0 ]]; then
         log_warning "Резервные копии UFW не найдены"
