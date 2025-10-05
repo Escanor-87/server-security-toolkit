@@ -177,51 +177,24 @@ setup_permissions() {
     chmod 755 "$logs_dir"
     log_success "Создана директория для логов: $logs_dir"
     
-    # Удаляем старый алиас ss если существует
-    if [[ -L "/usr/local/bin/ss" ]] || [[ -f "/usr/local/bin/ss" ]]; then
-        rm "/usr/local/bin/ss"
-        log_info "Удален старый алиас ss"
-    fi
+    # Удаляем старые алиасы ss и security-toolkit
+    rm -f "/usr/local/bin/ss" "/usr/local/bin/security-toolkit" "/usr/bin/ss" "/usr/bin/security-toolkit" 2>/dev/null || true
     
-    # Удаляем старые бинари/ссылки, будем создавать обёртку-скрипт
-    if [[ -L "$SYMLINK_PATH" ]] || [[ -f "$SYMLINK_PATH" ]]; then
-        rm -f "$SYMLINK_PATH"
-    fi
-    
-    # Создаем короткий алиас sst
-    local short_alias="/usr/local/bin/sst"
-    if [[ -L "$short_alias" ]] || [[ -f "$short_alias" ]]; then
-        rm -f "$short_alias"
-    fi
-
-    # Дополнительные системные ссылки (fallback)
-    if [[ -w "/usr/bin" ]]; then
-        ln -sf "/usr/local/bin/sst" /usr/bin/sst 2>/dev/null || true
-        ln -sf "/usr/local/bin/security-toolkit" /usr/bin/security-toolkit 2>/dev/null || true
-    fi
-    
-    # Обёртки-скрипты для более надёжного запуска через bash
+    # Создаём только sst
     if [[ -w "/usr/local/bin" ]]; then
-        rm -f /usr/local/bin/security-toolkit /usr/local/bin/sst 2>/dev/null || true
-        cat > /usr/local/bin/security-toolkit << EOF
-#!/bin/bash
-exec "$INSTALL_DIR/main.sh" "$@"
-EOF
-        chmod 755 /usr/local/bin/security-toolkit
-        
         cat > /usr/local/bin/sst << EOF
 #!/bin/bash
-exec "$INSTALL_DIR/main.sh" "$@"
+exec "$INSTALL_DIR/main.sh" "\$@"
 EOF
         chmod 755 /usr/local/bin/sst
     fi
     
-    # Проверяем, что обёртки доступны
-    if [[ -x "/usr/local/bin/security-toolkit" ]]; then
-        log_success "CLI security-toolkit установлен"
-    else
-        log_warning "CLI security-toolkit недоступен"
+    # Дополнительная ссылка в /usr/bin (fallback)
+    if [[ -w "/usr/bin" ]]; then
+        ln -sf "/usr/local/bin/sst" /usr/bin/sst 2>/dev/null || true
     fi
+    
+    # Проверяем, что sst доступен
     if [[ -x "/usr/local/bin/sst" ]]; then
         log_success "CLI sst установлен"
     else
@@ -387,13 +360,12 @@ show_installation_info() {
     log_success "🎉 Server Security Toolkit успешно установлен!"
     echo
     echo "📍 Расположение: $INSTALL_DIR"
-    echo "🔗 Команды: sst | security-toolkit | f2b"
+    echo "🔗 Команды: sst | f2b"
     echo
     echo "🚀 Быстрый старт:"
     echo "   sudo sst             # Security Toolkit"
     echo "   f2b list             # fail2ban статус"
     echo "   f2b help             # fail2ban команды"
-    echo "   sudo security-toolkit"
     echo
     echo "📋 Или перейдите в директорию:"
     echo "   cd $INSTALL_DIR"
@@ -406,7 +378,7 @@ show_installation_info() {
     echo "   4. System Hardening → fail2ban + автообновления"
     echo
     echo "⚡ Автоматическая настройка:"
-    echo "   sudo security-toolkit → 4. Full Security Setup"
+    echo "   sudo sst → 4. Full Security Setup"
     echo
 }
 

@@ -128,21 +128,14 @@ update_toolkit() {
     chmod +x tests/*.sh 2>/dev/null || true
     log_info "Права доступа восстановлены"
 
-    # Удаляем старые файлы/ссылки и создаём обёртки CLI в /usr/local/bin
-    local cli_main="/usr/local/bin/security-toolkit"
-    local cli_short="/usr/local/bin/sst"
-    rm -f "$cli_main" "$cli_short" 2>/dev/null || true
+    # Удаляем старый алиас security-toolkit и создаём только sst
+    rm -f "/usr/local/bin/security-toolkit" "/usr/local/bin/sst" 2>/dev/null || true
     if [[ -w "/usr/local/bin" ]]; then
-        cat > "$cli_main" << EOF
+        cat > "/usr/local/bin/sst" << EOF
 #!/bin/bash
 exec "$SCRIPT_DIR/main.sh" "\$@"
 EOF
-        chmod 755 "$cli_main" 2>/dev/null || true
-        cat > "$cli_short" << EOF
-#!/bin/bash
-exec "$SCRIPT_DIR/main.sh" "\$@"
-EOF
-        chmod 755 "$cli_short" 2>/dev/null || true
+        chmod 755 "/usr/local/bin/sst" 2>/dev/null || true
     fi
 
     # Гарантируем, что /usr/local/bin в PATH для всех shell'ов
@@ -1422,36 +1415,34 @@ update_toolkit() {
 
 # Главная функция
 main() {
-    # Ротируем логи при запуске
-    rotate_logs
+    # Ротируем логи при запуске (тихо)
+    rotate_logs >/dev/null 2>&1
     
-    log_info "🚀 Запуск Server Security Toolkit v$VERSION"
-    log_info "Скрипт запущен из: ${BASH_SOURCE[0]}"
+    # Тихое логирование технической информации (только в файл)
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] 🚀 Запуск Server Security Toolkit v$VERSION" >> "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Скрипт запущен из: ${BASH_SOURCE[0]}" >> "$LOG_FILE"
     if [[ -L "${BASH_SOURCE[0]}" ]]; then
-        log_info "Символическая ссылка указывает на: $(readlink -f "${BASH_SOURCE[0]}")"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Символическая ссылка: $(readlink -f "${BASH_SOURCE[0]}")" >> "$LOG_FILE"
     fi
-    log_info "Рабочая директория: $SCRIPT_DIR"
-    log_info "Директория модулей: $MODULES_DIR"
-    log_info "Файл логов: $LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Рабочая директория: $SCRIPT_DIR" >> "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Директория модулей: $MODULES_DIR" >> "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Файл логов: $LOG_FILE" >> "$LOG_FILE"
     
-    # Проверки
-    log_info "Выполнение предварительных проверок..."
-    check_root
-    check_os
-    check_requirements
+    # Тихие проверки (ошибки все равно выведутся если есть)
+    check_root >/dev/null 2>&1 || { log_error "Требуются права root. Запустите: sudo sst"; exit 1; }
+    check_os >/dev/null 2>&1 || true
+    check_requirements >/dev/null 2>&1 || true
     install_traps
     
-    # Загружаем модули
-    log_info "Загрузка модулей..."
-    if ! load_modules; then
+    # Загружаем модули тихо
+    if ! load_modules >/dev/null 2>&1; then
         log_error "Критическая ошибка: не удалось загрузить модули"
         exit 1
     fi
     
-    # Проверяем обновления
+    # Проверяем обновления тихо
     if check_for_updates_silent; then
         UPDATE_AVAILABLE=true
-        log_info "Доступны обновления скрипта"
     else
         UPDATE_AVAILABLE=false
     fi
