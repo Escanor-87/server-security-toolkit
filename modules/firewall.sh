@@ -317,7 +317,8 @@ add_firewall_rule() {
     
     # Создаём бекап ПЕРЕД добавлением правила
     log_info "Создание бекапа текущих правил..."
-    local backup_file="$SCRIPT_DIR/Backups/ufw/before_add_rule_$(date +%Y%m%d_%H%M%S).txt"
+    local backup_file
+    backup_file="$SCRIPT_DIR/Backups/ufw/before_add_rule_$(date +%Y%m%d_%H%M%S).txt"
     mkdir -p "$SCRIPT_DIR/Backups/ufw"
     ufw status numbered > "$backup_file" 2>/dev/null || log_warning "Не удалось создать бекап"
     
