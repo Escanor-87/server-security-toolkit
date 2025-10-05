@@ -46,15 +46,20 @@ update_docker_compose() {
     dir=$(dirname "$compose_file"); base=$(basename "$compose_file")
     log_info "🐳 Обновление $base в $dir"
 
-    # Текущие контейнеры проекта
+    # Текущие контейнеры проекта (логируем и показываем)
+    exec_logged "compose ps ($base)" $cmd -f "$compose_file" ps || true
     $cmd -f "$compose_file" ps || true
 
     # Pull и перезапуск
     log_info "Загрузка новых образов..."
-    $cmd -f "$compose_file" pull || log_warning "Не все образы удалось обновить"
+    if ! exec_logged "compose pull ($base)" $cmd -f "$compose_file" pull; then
+        log_warning "Не все образы удалось обновить"
+    fi
 
     log_info "Перезапуск контейнеров..."
-    if $cmd -f "$compose_file" down && $cmd -f "$compose_file" up -d; then
+    exec_logged "compose down ($base)" $cmd -f "$compose_file" down
+    exec_logged "compose up -d ($base)" $cmd -f "$compose_file" up -d
+    if $cmd -f "$compose_file" ps >/dev/null 2>&1; then
         log_success "Контейнеры перезапущены"
     else
         log_error "Ошибка перезапуска контейнеров"
@@ -63,6 +68,7 @@ update_docker_compose() {
 
     # Итоговый статус
     log_info "Статус после обновления:"
+    exec_logged "compose ps (post, $base)" $cmd -f "$compose_file" ps || true
     $cmd -f "$compose_file" ps || true
 
     if [[ "$quiet" != "yes" ]]; then

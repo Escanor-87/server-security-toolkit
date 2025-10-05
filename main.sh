@@ -60,6 +60,68 @@ rotate_logs() {
     fi
 }
 
+# Тихая проверка обновлений (без вывода в консоль)
+check_for_updates_silent() {
+    if [[ -d "$SCRIPT_DIR/.git" ]]; then
+        pushd "$SCRIPT_DIR" >/dev/null || return 1
+        git fetch origin main >/dev/null 2>&1 || { popd >/dev/null; return 1; }
+        local local_commit remote_commit
+        local_commit=$(git rev-parse HEAD 2>/dev/null || echo "")
+        remote_commit=$(git rev-parse origin/main 2>/dev/null || echo "")
+        popd >/dev/null || true
+        [[ -n "$local_commit" && -n "$remote_commit" && "$local_commit" != "$remote_commit" ]]
+        return $?
+    fi
+    return 1
+}
+
+# Применение обновления из origin/main с сохранением прав и симлинков
+update_toolkit() {
+    echo -n "Применить обновление? (Enter = да, 0 = отмена): "
+    read -r ans
+    if [[ "$ans" == "0" ]]; then
+        log_info "Обновление отменено пользователем"
+        return 0
+    fi
+
+    log_info "🔄 Применяем обновление..."
+    if [[ ! -d "$SCRIPT_DIR/.git" ]]; then
+        log_error "Текущая директория не является git-репозиторием: $SCRIPT_DIR"
+        log_info "Используйте установщик для переустановки: install.sh"
+        return 1
+    fi
+
+    pushd "$SCRIPT_DIR" >/dev/null || { log_error "Не удалось открыть $SCRIPT_DIR"; return 1; }
+    if git fetch origin main >/dev/null 2>&1 && git reset --hard origin/main >/dev/null 2>&1; then
+        log_success "✅ Обновление успешно применено!"
+    else
+        log_error "Не удалось применить обновление"
+        popd >/dev/null || true
+        return 1
+    fi
+
+    # Восстанавливаем права
+    chmod +x main.sh 2>/dev/null || true
+    chmod +x modules/*.sh 2>/dev/null || true
+    chmod +x tests/*.sh 2>/dev/null || true
+    log_info "Права доступа восстановлены"
+
+    # Восстанавливаем симлинки
+    local symlink_main="/usr/local/bin/security-toolkit"
+    local symlink_short="/usr/local/bin/sst"
+    rm -f "$symlink_main" "$symlink_short" 2>/dev/null || true
+    ln -s "$SCRIPT_DIR/main.sh" "$symlink_main" 2>/dev/null || true
+    ln -s "$SCRIPT_DIR/main.sh" "$symlink_short" 2>/dev/null || true
+
+    popd >/dev/null || true
+
+    echo
+    log_info "🔄 Скрипт будет автоматически перезапущен через 3 секунды..."
+    log_info "💡 Если перезапуск не сработает, запустите: sudo sst"
+    sleep 3
+    exec "$SCRIPT_DIR/main.sh"
+}
+
 # Функции логирования
 log_info() {
     local timestamp
@@ -85,18 +147,36 @@ log_error() {
     echo -e "${RED}[$timestamp] [ERROR]${NC} $1" | tee -a "$LOG_FILE"
 }
 
-# Детальное логирование команд
-log_command() {
-    local command="$1"
-    local result="$2"
-    local timestamp
+# Запуск команды с расширенным логированием: команда, код выхода, STDOUT/STDERR
+exec_logged() {
+    local desc="$1"; shift
+    local timestamp cmd_str rc stdout_file stderr_file
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    if [[ "$result" == "success" ]]; then
-        echo "[$timestamp] [COMMAND] SUCCESS: $command" >> "$LOG_FILE"
-    else
-        echo "[$timestamp] [COMMAND] FAILED: $command" >> "$LOG_FILE"
-    fi
+    cmd_str="$*"
+    stdout_file=$(mktemp)
+    stderr_file=$(mktemp)
+    # Не даём set -e оборвать выполнение внутри
+    set +e
+    "$@" >"$stdout_file" 2>"$stderr_file"
+    rc=$?
+    set -e
+    {
+        echo "[$timestamp] [COMMAND] $desc"
+        echo "  cwd: $(pwd)"
+        echo "  cmd: $cmd_str"
+        echo "  exit: $rc"
+        if [[ -s "$stdout_file" ]]; then
+            echo "  --- STDOUT ---"
+            cat "$stdout_file"
+        fi
+        if [[ -s "$stderr_file" ]]; then
+            echo "  --- STDERR ---"
+            cat "$stderr_file"
+        fi
+        echo "  ---------------"
+    } >> "$LOG_FILE"
+    rm -f "$stdout_file" "$stderr_file"
+    return $rc
 }
 
 # Логирование изменений конфигурации

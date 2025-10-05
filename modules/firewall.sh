@@ -448,16 +448,16 @@ restore_firewall_backup() {
     
     # Безопасный сброс и базовые политики
     log_warning "Сброс текущих правил UFW..."
-    ufw --force reset >/dev/null 2>&1 || true
-    ufw default deny incoming >/dev/null 2>&1 || true
-    ufw default allow outgoing >/dev/null 2>&1 || true
+    exec_logged "ufw --force reset" ufw --force reset || true
+    exec_logged "ufw default deny incoming" ufw default deny incoming || true
+    exec_logged "ufw default allow outgoing" ufw default allow outgoing || true
     
     # Fail-safe: разрешаем текущий SSH порт прежде всего
     local ssh_port
     ssh_port=$(grep -E "^Port[[:space:]]+" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tail -1)
     [[ -z "$ssh_port" ]] && ssh_port=22
     log_info "Fail-safe: разрешаем SSH порт $ssh_port/tcp"
-    ufw allow "$ssh_port"/tcp >/dev/null 2>&1 || true
+    exec_logged "ufw allow $ssh_port/tcp" ufw allow "$ssh_port"/tcp || true
     
     # Применяем правила из бекапа
     log_info "Применение правил из бекапа..."
@@ -475,23 +475,23 @@ restore_firewall_backup() {
             local source="${BASH_REMATCH[4]}"
             if [[ "$source" == "Anywhere" || "$source" == "Anywhere (v6)" ]]; then
                 log_info "Применение: ufw allow $port"
-                ufw allow "$port" >/dev/null 2>&1 && ((rules_applied++))
+                if exec_logged "ufw allow $port" ufw allow "$port"; then ((rules_applied++)); fi
             else
                 # Удаляем протокол для конструкции "to any port"
                 local ponly
                 ponly="${port%/*}"
                 log_info "Применение: ufw allow from $source to any port $ponly"
-                ufw allow from "$source" to any port "$ponly" >/dev/null 2>&1 && ((rules_applied++))
+                if exec_logged "ufw allow from $source to any port $ponly" ufw allow from "$source" to any port "$ponly"; then ((rules_applied++)); fi
             fi
         fi
     done < "$selected_backup"
     
     # Включаем UFW и показываем статус
     log_info "Включение UFW..."
-    if ufw --force enable >/dev/null 2>&1; then
+    if exec_logged "ufw --force enable" ufw --force enable; then
         log_success "UFW восстановлен. Применено правил: $rules_applied"
         echo
-        ufw status numbered || true
+        exec_logged "ufw status numbered" ufw status numbered || true
     else
         log_error "Ошибка включения UFW"
     fi
