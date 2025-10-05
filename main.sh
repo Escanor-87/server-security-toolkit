@@ -112,100 +112,6 @@ run_action() {
     return 0
 }
 
-# Тихая проверка обновлений (без вывода в консоль)
-check_for_updates_silent() {
-    if [[ -d "$SCRIPT_DIR/.git" ]]; then
-        pushd "$SCRIPT_DIR" >/dev/null || return 1
-        git fetch origin main >/dev/null 2>&1 || { popd >/dev/null; return 1; }
-        local local_commit remote_commit
-        local_commit=$(git rev-parse HEAD 2>/dev/null || echo "")
-        remote_commit=$(git rev-parse origin/main 2>/dev/null || echo "")
-        popd >/dev/null || true
-        [[ -n "$local_commit" && -n "$remote_commit" && "$local_commit" != "$remote_commit" ]]
-        return $?
-    fi
-    return 1
-}
-
-# Применение обновления из origin/main с сохранением прав и симлинков
-update_toolkit() {
-    echo -n "Применить обновление? (Enter = да, 0 = отмена): "
-    read -r ans
-    if [[ "$ans" == "0" ]]; then
-        log_info "Обновление отменено пользователем"
-        return 0
-    fi
-
-    log_info "🔄 Применяем обновление..."
-    if [[ ! -d "$SCRIPT_DIR/.git" ]]; then
-        log_error "Текущая директория не является git-репозиторием: $SCRIPT_DIR"
-        log_info "Используйте установщик для переустановки: install.sh"
-        return 1
-    fi
-
-    pushd "$SCRIPT_DIR" >/dev/null || { log_error "Не удалось открыть $SCRIPT_DIR"; return 1; }
-    if git fetch origin main >/dev/null 2>&1 && git reset --hard origin/main >/dev/null 2>&1; then
-        log_success "✅ Обновление успешно применено!"
-    else
-        log_error "Не удалось применить обновление"
-        popd >/dev/null || true
-        return 1
-    fi
-
-    # Восстанавливаем права
-    chmod +x main.sh 2>/dev/null || true
-    chmod +x modules/*.sh 2>/dev/null || true
-    chmod +x tests/*.sh 2>/dev/null || true
-    log_info "Права доступа восстановлены"
-
-    # Удаляем старый алиас security-toolkit и создаём только sst
-    rm -f "/usr/local/bin/security-toolkit" "/usr/local/bin/sst" 2>/dev/null || true
-    if [[ -w "/usr/local/bin" ]]; then
-        cat > "/usr/local/bin/sst" << EOF
-#!/bin/bash
-exec "$SCRIPT_DIR/main.sh" "\$@"
-EOF
-        chmod 755 "/usr/local/bin/sst" 2>/dev/null || true
-    fi
-
-    # Гарантируем, что /usr/local/bin в PATH для всех shell'ов
-    if [[ -d "/etc/profile.d" ]]; then
-        cat > /etc/profile.d/security-toolkit-path.sh << 'EOF'
-export PATH="/usr/local/bin:$PATH"
-EOF
-        chmod 644 /etc/profile.d/security-toolkit-path.sh 2>/dev/null || true
-    fi
-
-    # Fallback симлинки в /usr/bin (если доступно) на обёртки
-    if [[ -w "/usr/bin" ]]; then
-        ln -sf "/usr/local/bin/sst" /usr/bin/sst 2>/dev/null || true
-        ln -sf "/usr/local/bin/security-toolkit" /usr/bin/security-toolkit 2>/dev/null || true
-    fi
-
-    # Обёртки-скрипты для более надёжного запуска через bash
-    if [[ -w "/usr/local/bin" ]]; then
-        cat > /usr/local/bin/security-toolkit << EOF
-#!/bin/bash
-exec "$SCRIPT_DIR/main.sh" "\$@"
-EOF
-        chmod 755 /usr/local/bin/security-toolkit 2>/dev/null || true
-        
-        cat > /usr/local/bin/sst << EOF
-#!/bin/bash
-exec "$SCRIPT_DIR/main.sh" "\$@"
-EOF
-        chmod 755 /usr/local/bin/sst 2>/dev/null || true
-    fi
-
-    popd >/dev/null || true
-
-    echo
-    log_info "🔄 Скрипт будет автоматически перезапущен через 3 секунды..."
-    log_info "💡 Если перезапуск не сработает, запустите: sudo sst"
-    sleep 3
-    exec "$SCRIPT_DIR/main.sh" "${ORIGINAL_ARGS[@]}"
-}
-
 # Функции логирования
 log_info() {
     local timestamp
@@ -572,7 +478,7 @@ analyze_security() {
 show_help() {
     clear
     echo -e "${BLUE}╔════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║           Server Security Toolkit - Справка           ║${NC}"
+    echo -e "${BLUE}║           Server Security Toolkit - Справка    ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════╝${NC}"
     echo
     echo -e "${GREEN}Горячие клавиши:${NC}"
@@ -1236,7 +1142,7 @@ full_security_setup_automated() {
 full_security_setup_interactive() {
     clear
     echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║              🚀 ИНТЕРАКТИВНАЯ НАСТРОЙКА БЕЗОПАСНОСТИ          ║${NC}"
+    echo -e "${BLUE}║              🚀 ИНТЕРАКТИВНАЯ НАСТРОЙКА БЕЗОПАСНОСТИ         ║${NC}"
     echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo
     
