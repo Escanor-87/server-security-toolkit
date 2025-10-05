@@ -55,9 +55,13 @@ rotate_logs() {
         
         # Оставляем только последние 10 файлов
         local log_files
-        mapfile -t log_files < <(ls -t "${LOGS_DIR}"/security-toolkit-*.log 2>/dev/null | tail -n +11)
+        # Используем find вместо ls для безопасной обработки файлов
+        mapfile -t log_files < <(find "${LOGS_DIR}" -maxdepth 1 -name "security-toolkit-*.log" -type f -print0 2>/dev/null | \
+            xargs -0 -I{} stat -f '%m %N' {} 2>/dev/null | sort -rn | tail -n +11 | cut -d' ' -f2- || \
+            find "${LOGS_DIR}" -maxdepth 1 -name "security-toolkit-*.log" -type f -print0 2>/dev/null | \
+            xargs -0 -I{} stat -c '%Y %n' {} 2>/dev/null | sort -rn | tail -n +11 | cut -d' ' -f2-)
         for old_file in "${log_files[@]}"; do
-            rm -f "$old_file"
+            [[ -n "$old_file" ]] && rm -f "$old_file"
         done
     fi
 }
@@ -78,7 +82,7 @@ show_changes_summary() {
     echo
     echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║       Сводка предстоящих изменений               ║${NC}"
-    echo -e "${BLUE}╚════════════════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
     echo
     echo -e "${YELLOW}$title${NC}"
     echo
