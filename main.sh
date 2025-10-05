@@ -66,7 +66,7 @@ rotate_logs() {
 install_traps() {
     set -E
     trap 'rc=$?; log_error "ERR trap: cmd=\"$BASH_COMMAND\" rc=$rc at ${BASH_SOURCE[0]}:$LINENO (func=${FUNCNAME[*]})"' ERR
-    trap 'rc=$?; log_info "EXIT trap: rc=$rc. Если rc!=0 — смотрите предыдущие [COMMAND]/[ERROR] записи."' EXIT
+    trap 'rc=$?; if (( rc != 0 )); then log_info "EXIT trap: rc=$rc. Если rc!=0 — смотрите предыдущие [COMMAND]/[ERROR] записи."; fi' EXIT
 }
 
 # Безопасный запуск действий меню: не даёт всему скрипту завершиться при ошибке
