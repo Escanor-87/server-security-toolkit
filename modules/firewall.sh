@@ -223,9 +223,17 @@ delete_firewall_rule() {
         fi
 
         # Создаём бекап ПЕРЕД удалением правила
-        if declare -f create_backup &>/dev/null; then
-            create_backup "ufw" "/etc/ufw" "before_delete_rule" >/dev/null 2>&1 || log_warning "Не удалось создать бекап"
-        fi
+        log_info "Создание бекапа текущих правил..."
+        local backup_file="$SCRIPT_DIR/Backups/ufw/before_delete_rule_$(date +%Y%m%d_%H%M%S).txt"
+        mkdir -p "$SCRIPT_DIR/Backups/ufw"
+        ufw status numbered > "$backup_file" 2>/dev/null || log_warning "Не удалось создать бекап"
+        
+        # Ротация: оставляем только последние 7 бекапов
+        local old_backups
+        mapfile -t old_backups < <(find "$SCRIPT_DIR/Backups/ufw" -name "before_*.txt" 2>/dev/null | sort -r | tail -n +8)
+        for old_backup in "${old_backups[@]}"; do
+            rm -f "$old_backup" 2>/dev/null
+        done
         
         # Удаление правила
         log_info "Удаление правила #$rule_input..."
@@ -301,9 +309,17 @@ add_firewall_rule() {
     read -p "Комментарий (опционально): " -r comment
     
     # Создаём бекап ПЕРЕД добавлением правила
-    if declare -f create_backup &>/dev/null; then
-        create_backup "ufw" "/etc/ufw" "before_add_rule" >/dev/null 2>&1 || log_warning "Не удалось создать бекап"
-    fi
+    log_info "Создание бекапа текущих правил..."
+    local backup_file="$SCRIPT_DIR/Backups/ufw/before_add_rule_$(date +%Y%m%d_%H%M%S).txt"
+    mkdir -p "$SCRIPT_DIR/Backups/ufw"
+    ufw status numbered > "$backup_file" 2>/dev/null || log_warning "Не удалось создать бекап"
+    
+    # Ротация: оставляем только последние 7 бекапов
+    local old_backups
+    mapfile -t old_backups < <(find "$SCRIPT_DIR/Backups/ufw" -name "before_*.txt" 2>/dev/null | sort -r | tail -n +8)
+    for old_backup in "${old_backups[@]}"; do
+        rm -f "$old_backup" 2>/dev/null
+    done
     
     if [[ -n "$protocol" ]]; then
         if [[ -n "$comment" ]]; then
@@ -375,9 +391,9 @@ restore_firewall_backup() {
         return 0
     fi
     
-    # Ищем резервные копии UFW (новый формат и старый)
+    # Ищем резервные копии UFW (текстовые файлы с правилами)
     local backup_files
-    mapfile -t backup_files < <(find "$backup_dir" -type f \( -name "*.tar.gz" -o -name "after_*" \) 2>/dev/null | sort -r)
+    mapfile -t backup_files < <(find "$backup_dir" -type f -name "before_*.txt" 2>/dev/null | sort -r)
     
     if [[ ${#backup_files[@]} -eq 0 ]]; then
         log_warning "Резервные копии UFW не найдены"
@@ -424,36 +440,44 @@ restore_firewall_backup() {
     
     # Создаём резервную копию текущих правил перед восстановлением
     log_info "Создание резервной копии текущих правил..."
-    if declare -f create_backup &>/dev/null; then
-        create_backup "ufw" "/etc/ufw" "before_restore" >/dev/null 2>&1
-    fi
+    local current_backup="$SCRIPT_DIR/Backups/ufw/before_restore_$(date +%Y%m%d_%H%M%S).txt"
+    ufw status numbered > "$current_backup" 2>/dev/null
     
     # Восстанавливаем правила
     log_info "Восстановление правил UFW из: $(basename "$selected_backup")"
     
-    # Проверяем тип файла
-    if [[ "$selected_backup" == *.tar.gz ]]; then
-        # Архив - распаковываем
-        if tar -xzf "$selected_backup" -C /etc/ufw 2>/dev/null; then
-            log_success "Правила UFW восстановлены из архива"
-        else
-            log_error "Ошибка распаковки архива"
-            return 0
+    # Сбрасываем все текущие правила
+    log_warning "Сброс текущих правил UFW..."
+    ufw --force reset >/dev/null 2>&1
+    
+    # Устанавливаем базовые политики
+    ufw default deny incoming >/dev/null 2>&1
+    ufw default allow outgoing >/dev/null 2>&1
+    
+    # Читаем бекап и применяем правила
+    log_info "Применение правил из бекапа..."
+    local rules_applied=0
+    
+    while IFS= read -r line; do
+        # Пропускаем заголовки и пустые строки
+        if [[ "$line" =~ ^\[.*\].*ALLOW.*([0-9]+)(/[a-z]+)? ]]; then
+            local port_info="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+            log_info "Применение правила: $port_info"
+            ufw allow "$port_info" >/dev/null 2>&1 && ((rules_applied++))
         fi
+    done < "$selected_backup"
+    
+    # Включаем UFW
+    log_info "Включение UFW..."
+    if ufw --force enable >/dev/null 2>&1; then
+        log_success "UFW восстановлен. Применено правил: $rules_applied"
+        echo
+        ufw status numbered
     else
-        # Обычный файл - это директория /etc/ufw, скопированная целиком
-        log_error "Неподдерживаемый формат бекапа. Используйте архивы .tar.gz"
+        log_error "Ошибка включения UFW"
         return 0
     fi
     
-    # Перезапускаем UFW
-    log_info "Перезапуск UFW..."
-    if ufw --force enable 2>/dev/null; then
-        log_success "UFW перезапущен"
-        echo
-        ufw status verbose
-    else
-        log_error "Ошибка запуска UFW"
-        return 0
-    fi
+    echo
+    read -p "Нажмите Enter для возврата в меню..." -r
 }

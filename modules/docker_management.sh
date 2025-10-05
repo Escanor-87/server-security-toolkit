@@ -48,13 +48,17 @@ update_docker_compose() {
     compose_dir=$(dirname "$compose_file")
     
     log_info "🐳 Обновление $(basename "$compose_file") в $compose_dir"
+    log_info "DEBUG: compose_file=$compose_file"
+    log_info "DEBUG: pwd=$(pwd)"
     
     # Определяем команду Docker Compose
     local compose_cmd=""
     if command -v docker-compose &>/dev/null; then
         compose_cmd="docker-compose"
+        log_info "DEBUG: Используется docker-compose"
     elif docker compose version &>/dev/null; then
         compose_cmd="docker compose"
+        log_info "DEBUG: Используется docker compose"
     else
         log_error "Docker Compose не найден"
         return 1
@@ -63,25 +67,35 @@ update_docker_compose() {
     # Используем -f для указания файла вместо cd
     echo
     log_info "Текущие контейнеры:"
-    $compose_cmd -f "$compose_file" ps
+    if ! $compose_cmd -f "$compose_file" ps 2>&1; then
+        log_error "Ошибка получения статуса контейнеров"
+        return 1
+    fi
     
     echo
     log_info "Загрузка новых образов..."
-    $compose_cmd -f "$compose_file" pull || log_warning "Не все образы удалось обновить"
+    if ! $compose_cmd -f "$compose_file" pull 2>&1; then
+        log_warning "Не все образы удалось обновить"
+    fi
     
     echo
-    log_info "Перезапуск контейнеров..."
-    $compose_cmd -f "$compose_file" down
-    $compose_cmd -f "$compose_file" up -d || {
-        log_error "Ошибка перезапуска контейнеров"
+    log_info "Остановка контейнеров..."
+    if ! $compose_cmd -f "$compose_file" down 2>&1; then
+        log_error "Ошибка остановки контейнеров"
         return 1
-    }
+    fi
+    
+    log_info "Запуск контейнеров..."
+    if ! $compose_cmd -f "$compose_file" up -d 2>&1; then
+        log_error "Ошибка запуска контейнеров"
+        return 1
+    fi
     
     log_success "Контейнеры перезапущены"
     
     echo
     log_info "Статус после обновления:"
-    $compose_cmd -f "$compose_file" ps
+    $compose_cmd -f "$compose_file" ps 2>&1 || log_warning "Не удалось получить статус"
     
     # Очистка образов только для одиночного обновления
     if [[ "$skip_cleanup" != "yes" ]]; then
