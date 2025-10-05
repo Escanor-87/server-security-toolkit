@@ -99,10 +99,10 @@ update_all_docker_projects() {
         log_info "Обработка: $f"
         echo "════════════════════════════════════════════════════════════════"
         if update_docker_compose "$f" "yes"; then
-            ((ok++))
+            ok=$((ok+1))
             log_success "✅ Проект обновлен: $(dirname "$f")"
         else
-            ((fail++))
+            fail=$((fail+1))
             log_error "❌ Ошибка обновления: $(dirname "$f")"
         fi
         echo

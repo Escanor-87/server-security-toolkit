@@ -479,7 +479,7 @@ restore_firewall_backup() {
                 log_info "Применение: ufw allow $port"
                 # Избегаем дублирования fail-safe SSH
                 if [[ "$port" != "$ssh_port" && "$port" != "$ssh_port/tcp" ]]; then
-                    if exec_logged "ufw allow $port" ufw allow "$port"; then ((rules_applied++)); fi
+                    if exec_logged "ufw allow $port" ufw allow "$port"; then rules_applied=$((rules_applied+1)); fi
                 else
                     log_info "Правило SSH уже применено fail-safe, пропускаем"
                 fi
@@ -488,7 +488,7 @@ restore_firewall_backup() {
                 local ponly
                 ponly="${port%/*}"
                 log_info "Применение: ufw allow from $source to any port $ponly"
-                if exec_logged "ufw allow from $source to any port $ponly" ufw allow from "$source" to any port "$ponly"; then ((rules_applied++)); fi
+                if exec_logged "ufw allow from $source to any port $ponly" ufw allow from "$source" to any port "$ponly"; then rules_applied=$((rules_applied+1)); fi
             fi
         fi
     done < "$selected_backup"
