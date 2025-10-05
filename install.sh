@@ -207,6 +207,12 @@ setup_permissions() {
         rm "$short_alias"
     fi
     ln -s "$INSTALL_DIR/main.sh" "$short_alias"
+
+    # Дополнительные системные ссылки (fallback)
+    if [[ -w "/usr/bin" ]]; then
+        ln -sf "$INSTALL_DIR/main.sh" /usr/bin/sst 2>/dev/null || true
+        ln -sf "$INSTALL_DIR/main.sh" /usr/bin/security-toolkit 2>/dev/null || true
+    fi
     
     # Проверяем, что символические ссылки работают
     if [[ -L "$SYMLINK_PATH" ]] && [[ -f "$(readlink -f "$SYMLINK_PATH")" ]]; then
@@ -221,6 +227,14 @@ setup_permissions() {
         log_warning "Проблема с алиасом sst"
     fi
     
+    # Гарантируем, что /usr/local/bin в PATH для shell-пользователей
+    if [[ -d "/etc/profile.d" ]]; then
+        cat > /etc/profile.d/security-toolkit-path.sh << 'EOF'
+export PATH="/usr/local/bin:$PATH"
+EOF
+        chmod 644 /etc/profile.d/security-toolkit-path.sh
+    fi
+
     # Настраиваем PATH для zsh пользователей
     setup_zsh_path
     

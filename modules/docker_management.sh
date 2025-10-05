@@ -79,6 +79,8 @@ update_docker_compose() {
 }
 
 update_all_docker_projects() {
+    # Локально отключаем set -e, чтобы неожиданные non-zero RC не роняли скрипт
+    set +e
     local files
     mapfile -t files < <(find_docker_compose_files)
     if [[ ${#files[@]} -eq 0 ]]; then
@@ -130,6 +132,8 @@ update_all_docker_projects() {
 
     echo
     read -p "Нажмите Enter для возврата в меню..." -r
+    # Восстанавливаем строгий режим
+    set -e
     return 0
 }
 

@@ -60,6 +60,19 @@ rotate_logs() {
     fi
 }
 
+# Безопасный запуск действий меню: не даёт всему скрипту завершиться при ошибке
+run_action() {
+    local desc="$1"; shift
+    set +e
+    "$@"
+    local rc=$?
+    set -e
+    if (( rc != 0 )); then
+        log_error "$desc завершилось с кодом $rc"
+    fi
+    return 0
+}
+
 # Тихая проверка обновлений (без вывода в консоль)
 check_for_updates_silent() {
     if [[ -d "$SCRIPT_DIR/.git" ]]; then
@@ -112,6 +125,20 @@ update_toolkit() {
     rm -f "$symlink_main" "$symlink_short" 2>/dev/null || true
     ln -s "$SCRIPT_DIR/main.sh" "$symlink_main" 2>/dev/null || true
     ln -s "$SCRIPT_DIR/main.sh" "$symlink_short" 2>/dev/null || true
+
+    # Гарантируем, что /usr/local/bin в PATH для всех shell'ов
+    if [[ -d "/etc/profile.d" ]]; then
+        cat > /etc/profile.d/security-toolkit-path.sh << 'EOF'
+export PATH="/usr/local/bin:$PATH"
+EOF
+        chmod 644 /etc/profile.d/security-toolkit-path.sh 2>/dev/null || true
+    fi
+
+    # Fallback симлинки в /usr/bin (если доступно)
+    if [[ -w "/usr/bin" ]]; then
+        ln -sf "$SCRIPT_DIR/main.sh" /usr/bin/sst 2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/main.sh" /usr/bin/security-toolkit 2>/dev/null || true
+    fi
 
     popd >/dev/null || true
 
@@ -1404,7 +1431,7 @@ main() {
             1) 
                 log_info "Пользователь выбрал: Full Security Setup"
                 if declare -f full_security_setup &>/dev/null; then
-                    full_security_setup
+                    run_action "Full Security Setup" full_security_setup
                 else
                     log_error "Функция full_security_setup не найдена"
                 fi
@@ -1412,7 +1439,7 @@ main() {
             2) 
                 log_info "Пользователь выбрал: SSH Security"
                 if declare -f configure_ssh_security &>/dev/null; then
-                    configure_ssh_security
+                    run_action "SSH Security" configure_ssh_security
                 else
                     log_error "Функция configure_ssh_security не найдена"
                 fi
@@ -1420,7 +1447,7 @@ main() {
             3) 
                 log_info "Пользователь выбрал: Firewall Setup"
                 if declare -f configure_firewall &>/dev/null; then
-                    configure_firewall
+                    run_action "Firewall Setup" configure_firewall
                 else
                     log_error "Функция configure_firewall не найдена"
                 fi
@@ -1428,7 +1455,7 @@ main() {
             4) 
                 log_info "Пользователь выбрал: System Hardening"
                 if declare -f system_hardening &>/dev/null; then
-                    system_hardening
+                    run_action "System Hardening" system_hardening
                 else
                     log_error "Функция system_hardening не найдена"
                 fi
@@ -1436,7 +1463,7 @@ main() {
             5) 
                 log_info "Пользователь выбрал: Docker Management"
                 if declare -f docker_management &>/dev/null; then
-                    docker_management
+                    run_action "Docker Management" docker_management
                 else
                     log_error "Функция docker_management не найдена"
                 fi
