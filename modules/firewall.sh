@@ -459,9 +459,9 @@ restore_firewall_backup() {
     local rules_applied=0
     
     while IFS= read -r line; do
-        # Пропускаем заголовки и пустые строки
-        if [[ "$line" =~ ^\[.*\].*ALLOW.*([0-9]+)(/[a-z]+)? ]]; then
-            local port_info="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+        # Ищем строки с правилами: [ 1] 22/tcp ALLOW IN Anywhere
+        if [[ "$line" =~ \[[[:space:]]*[0-9]+\][[:space:]]+([0-9]+(/[a-z]+)?)[[:space:]]+ALLOW ]]; then
+            local port_info="${BASH_REMATCH[1]}"
             log_info "Применение правила: $port_info"
             ufw allow "$port_info" >/dev/null 2>&1 && ((rules_applied++))
         fi
