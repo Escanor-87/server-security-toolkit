@@ -247,8 +247,8 @@ show_header() {
     clear
     echo -e "${BLUE}"
     echo "╔════════════════════════════════════════════════╗"
-    echo "║      Server Security Toolkit v${VERSION}       ║"
-    echo "║    Ubuntu/Debian Server Hardening Script      ║"
+    echo "║       Server Security Toolkit v${VERSION}      ║"
+    echo "║     Ubuntu/Debian Server Hardening Script      ║"
     echo "╚════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo
@@ -359,6 +359,18 @@ load_modules() {
     log_success "Загружено модулей: $loaded_count"
 }
 
+# Функция для получения статуса сервиса с цветовым индикатором
+get_service_status() {
+    local service=$1
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+        echo -e "${GREEN}🟢${NC}"
+    elif systemctl is-enabled --quiet "$service" 2>/dev/null; then
+        echo -e "${YELLOW}🟡${NC}"
+    else
+        echo -e "${RED}🔴${NC}"
+    fi
+}
+
 # Главное меню
 show_menu() {
     show_header
@@ -371,29 +383,74 @@ show_menu() {
         echo
     fi
     
+    # Получаем статусы для индикаторов
+    local ssh_status ufw_status f2b_status
+    ssh_status=$(get_service_status ssh)
+    ufw_status=$(get_service_status ufw)
+    f2b_status=$(get_service_status fail2ban)
+    
     echo "🔧 Выберите действие:"
     echo
-    echo "1. 🚀 Full Security Setup - Интерактивная настройка безопасности"
-    echo "2. 🔐 SSH Security - Настройка безопасности SSH"
-    echo "3. 🛡️  Firewall Setup - Настройка файрвола UFW"
-    echo "4. 🔧 System Hardening - Укрепление системы"
-    echo "5. 🐳 Docker Management - Управление Docker контейнерами"
-    echo "6. 📊 System Status & Security - Статус системы и безопасности"
-    echo "7. 📋 View Logs - Просмотр логов"
+    echo "1. 🚀 Full Security Setup     - Интерактивная настройка"
+    echo "2. 🔐 SSH Security ${ssh_status}          - Настройка SSH"
+    echo "3. 🛡️  Firewall Setup ${ufw_status}       - Настройка UFW"
+    echo "4. 🔧 System Hardening ${f2b_status}      - fail2ban, обновления"
+    echo "5. 🐳 Docker Management        - Управление контейнерами"
+    echo "6. 📊 System Status            - Статус системы"
+    echo "7. 📋 View Logs                - Просмотр логов"
     
     # Добавляем пункт обновления если обновление доступно
     if [[ "$UPDATE_AVAILABLE" == "true" ]]; then
-        echo "8. 🔄 Update Toolkit - Обновить Security Toolkit"
-        echo "9. 🗑️  Uninstall - Удалить Security Toolkit"
-        echo "0. 🚪 Exit - Выход"
+        echo "8. 🔄 Update Toolkit           - Обновить"
+        echo "9. 🗑️  Uninstall               - Удалить"
         echo
-        echo -n "Введите номер действия [0-9]: "
+        echo -e "${YELLOW}[q=выход, h=помощь]${NC}"
+        echo
+        echo -n "Выберите [0-9/q/h]: "
     else
-        echo "8. 🗑️  Uninstall - Удалить Security Toolkit"
-        echo "0. 🚪 Exit - Выход"
+        echo "8. 🗑️  Uninstall               - Удалить"
         echo
-        echo -n "Введите номер действия [0-8]: "
+        echo -e "${YELLOW}[q=выход, h=помощь]${NC}"
+        echo
+        echo -n "Выберите [0-8/q/h]: "
     fi
+}
+
+# Показать справку
+show_help() {
+    clear
+    echo -e "${BLUE}╔════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║           Server Security Toolkit - Справка           ║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════════════╝${NC}"
+    echo
+    echo -e "${GREEN}Горячие клавиши:${NC}"
+    echo "  q - Выход из программы"
+    echo "  h - Показать эту справку"
+    echo "  0 - Выход"
+    echo
+    echo -e "${GREEN}Цветовые индикаторы статуса:${NC}"
+    echo -e "  ${GREEN}🟢${NC} - Сервис активен и работает"
+    echo -e "  ${YELLOW}🟡${NC} - Сервис включён, но не запущен"
+    echo -e "  ${RED}🔴${NC} - Сервис отключён или не установлен"
+    echo
+    echo -e "${GREEN}Основные команды:${NC}"
+    echo "  sst          - Запустить Security Toolkit"
+    echo "  f2b list     - Показать забаненные IP (fail2ban)"
+    echo "  f2b status   - Статус fail2ban"
+    echo "  f2b help     - Справка по fail2ban"
+    echo
+    echo -e "${GREEN}Рекомендуемый порядок настройки:${NC}"
+    echo "  1. SSH Security → Импорт/генерация ключей"
+    echo "  2. SSH Security → Смена SSH порта"
+    echo "  3. Firewall Setup → Базовая настройка UFW"
+    echo "  4. System Hardening → Установка fail2ban"
+    echo "  5. SSH Security → Отключение парольной авторизации"
+    echo
+    echo -e "${YELLOW}Файлы логов:${NC} $LOGS_DIR/security-toolkit.log"
+    echo -e "${YELLOW}Директория:${NC} $SCRIPT_DIR"
+    echo
+    echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
+    read -r
 }
 
 # Объединённый статус системы и безопасности
@@ -1453,7 +1510,15 @@ main() {
         read -n 1 -r choice || choice=""
         echo
         
+        # Обработка горячих клавиш
         case $choice in
+            q|Q)
+                log_info "До свидания! 👋"
+                exit 0
+                ;;
+            h|H)
+                show_help
+                ;;
             1) 
                 log_info "Пользователь выбрал: Full Security Setup"
                 if declare -f full_security_setup &>/dev/null; then
@@ -1496,11 +1561,14 @@ main() {
                 ;;
             6) 
                 log_info "Пользователь выбрал: System Status & Security"
-                show_unified_status 
+                show_unified_status
+                echo
+                echo -e "${YELLOW}Нажмите Enter для возврата...${NC}"
+                read -r
                 ;;
             7) 
                 log_info "Пользователь выбрал: View Logs"
-                view_logs 
+                view_logs
                 ;;
             8) 
                 if [[ "$UPDATE_AVAILABLE" == "true" ]]; then
@@ -1517,7 +1585,7 @@ main() {
                     uninstall_toolkit
                 else
                     log_error "Неверный выбор: '$choice'"
-                    sleep 2
+                    sleep 1
                     continue
                 fi
                 ;;
@@ -1527,17 +1595,10 @@ main() {
                 ;;
             *)
                 log_error "Неверный выбор: '$choice'"
-                sleep 2
+                sleep 1
                 continue
                 ;;
         esac
-        
-        # Подтверждение только для информационных пунктов
-        if [[ "$choice" == "6" || "$choice" == "7" ]]; then
-            echo
-            echo -e "${YELLOW}Нажмите Enter для возврата в главное меню...${NC}"
-            read -r
-        fi
     done
 }
 
