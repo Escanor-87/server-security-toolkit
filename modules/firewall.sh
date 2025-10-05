@@ -415,42 +415,44 @@ restore_firewall_backup() {
     log_warning "⚠️  ВНИМАНИЕ: Это действие перезапишет текущие правила UFW!"
     echo "Будет восстановлен файл: $(basename "$selected_backup")"
     echo
-    read -p "Продолжить восстановление? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    read -p "Продолжить восстановление? (Enter = да, 0 = отмена): " -r
+    if [[ "$REPLY" == "0" ]]; then
         log_info "Восстановление отменено"
         return 0
     fi
     
-    # Создаем резервную копию текущих правил перед восстановлением
-    local current_backup
-    current_backup="$backup_dir/ufw_rules_before_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
-    if tar -czf "$current_backup" -C /etc/ufw . 2>/dev/null; then
-        log_info "Текущие правила сохранены как: $(basename "$current_backup")"
+    # Создаём резервную копию текущих правил перед восстановлением
+    log_info "Создание резервной копии текущих правил..."
+    if declare -f create_backup &>/dev/null; then
+        create_backup "ufw" "/etc/ufw" "before_restore" >/dev/null 2>&1
     fi
     
-    # Останавливаем UFW
-    log_info "Остановка UFW..."
-    ufw --force disable
+    # Восстанавливаем правила
+    log_info "Восстановление правил UFW из: $(basename "$selected_backup")"
     
-    # Восстанавливаем из резервной копии
-    log_info "Восстановление правил UFW..."
-    if tar -xzf "$selected_backup" -C /etc/ufw; then
-        log_success "Правила UFW восстановлены из $(basename "$selected_backup")"
-        
-        # Перезапускаем UFW
-        log_info "Запуск UFW..."
-        if ufw --force enable; then
-            log_success "UFW запущен с восстановленными правилами"
-            echo
-            log_info "Текущий статус UFW:"
-            ufw status verbose
+    # Проверяем тип файла
+    if [[ "$selected_backup" == *.tar.gz ]]; then
+        # Архив - распаковываем
+        if tar -xzf "$selected_backup" -C /etc/ufw 2>/dev/null; then
+            log_success "Правила UFW восстановлены из архива"
         else
-            log_error "Ошибка запуска UFW"
-            return 1
+            log_error "Ошибка распаковки архива"
+            return 0
         fi
     else
-        log_error "Ошибка восстановления правил UFW"
-        return 1
+        # Обычный файл - это директория /etc/ufw, скопированная целиком
+        log_error "Неподдерживаемый формат бекапа. Используйте архивы .tar.gz"
+        return 0
+    fi
+    
+    # Перезапускаем UFW
+    log_info "Перезапуск UFW..."
+    if ufw --force enable 2>/dev/null; then
+        log_success "UFW перезапущен"
+        echo
+        ufw status verbose
+    else
+        log_error "Ошибка запуска UFW"
+        return 0
     fi
 }

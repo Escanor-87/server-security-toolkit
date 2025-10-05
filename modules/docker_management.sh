@@ -149,18 +149,22 @@ update_all_docker_projects() {
         echo "════════════════════════════════════════════════════════════════"
         
         # Пропускаем очистку образов при массовом обновлении
-        if update_docker_compose "$compose_file" "yes"; then
+        local update_result=0
+        update_docker_compose "$compose_file" "yes" || update_result=$?
+        
+        if [[ $update_result -eq 0 ]]; then
             ((updated_count++))
             log_success "✅ Проект обновлен: $(dirname "$compose_file")"
         else
             ((failed_count++))
-            log_error "❌ Ошибка обновления: $(dirname "$compose_file")"
+            log_error "❌ Ошибка обновления: $(dirname "$compose_file") (код: $update_result)"
         fi
         
         # Небольшая пауза между проектами
         if [[ $compose_file != "${compose_files[-1]}" ]]; then
             echo
-            sleep 1
+            log_info "Переход к следующему проекту..."
+            sleep 2
         fi
     done
     

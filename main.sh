@@ -309,34 +309,6 @@ show_unified_status() {
     fi
     echo
     
-    # SSH Security
-    echo -e "${BLUE}🔒 SSH SECURITY:${NC}"
-    if [[ -f /etc/ssh/sshd_config ]]; then
-        local ssh_port password_auth root_login
-        ssh_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
-        password_auth=$(grep "^PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
-        root_login=$(grep "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "yes")
-        
-        echo "  • Port: $ssh_port"
-        case $password_auth in
-            no) echo -e "  • Password auth: ${GREEN}disabled${NC}" ;;
-            *) echo -e "  • Password auth: ${RED}enabled${NC}" ;;
-        esac
-        case $root_login in
-            no) echo -e "  • Root login: ${GREEN}no${NC}" ;;
-            prohibit-password) echo -e "  • Root login: ${GREEN}key-only${NC}" ;;
-            *) echo -e "  • Root login: ${RED}yes${NC}" ;;
-        esac
-        
-        # Подсчёт ключей
-        local key_count=0
-        if [[ -f /root/.ssh/authorized_keys ]]; then
-            key_count=$(grep -c "^ssh-" /root/.ssh/authorized_keys 2>/dev/null || echo "0")
-        fi
-        echo "  • Active keys: $key_count"
-    fi
-    echo
-    
     # Docker
     echo -e "${BLUE}📦 DOCKER:${NC}"
     if command -v docker &>/dev/null; then
