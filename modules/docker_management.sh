@@ -145,24 +145,10 @@ update_all_docker_projects() {
             log_error "❌ Ошибка обновления: $(dirname "$compose_file")"
         fi
         
-        echo
+        # Небольшая пауза между проектами
         if [[ $compose_file != "${compose_files[-1]}" ]]; then
-            while true; do
-                read -p "Продолжить со следующим проектом? (Y/n): " -n 1 -r
-                echo
-                case $REPLY in
-                    [Yy]|"")
-                        break
-                        ;;
-                    [Nn])
-                        log_info "Обновление прервано пользователем"
-                        break 2  # Выход из внешнего цикла
-                        ;;
-                    *)
-                        log_error "Введите 'y' для продолжения или 'n' для остановки"
-                        ;;
-                esac
-            done
+            echo
+            sleep 1
         fi
     done
     

@@ -229,11 +229,11 @@ delete_firewall_rule() {
         echo "y" | ufw delete "$rule_input" >/dev/null 2>&1 || delete_result=$?
         
         if [[ $delete_result -eq 0 ]]; then
+            log_success "Правило #$rule_input удалено успешно"
             # Создаём бекап после удаления правила
             if declare -f create_backup &>/dev/null; then
-                create_backup "ufw" "/etc/ufw" "after_delete_rule" >/dev/null 2>&1
+                create_backup "ufw" "/etc/ufw" "after_delete_rule" >/dev/null 2>&1 || log_warning "Не удалось создать бекап"
             fi
-            log_success "Правило #$rule_input удалено успешно"
         else
             log_error "Не удалось удалить правило #$rule_input"
         fi
@@ -284,10 +284,15 @@ add_firewall_rule() {
         2) protocol="udp" ;;
         3) protocol="" ;;
         0) return 0 ;;
+        "") 
+            log_error "Выбор не может быть пустым"
+            sleep 2
+            return 0
+            ;;
         *) 
             log_error "Неверный выбор: '$proto_choice'"
             sleep 2
-            return 1
+            return 0
             ;;
     esac
     
@@ -308,12 +313,12 @@ add_firewall_rule() {
         fi
     fi
     
+    log_success "Правило добавлено для порта $port"
+    
     # Создаём бекап после добавления правила
     if declare -f create_backup &>/dev/null; then
-        create_backup "ufw" "/etc/ufw" "after_add_rule" >/dev/null 2>&1
+        create_backup "ufw" "/etc/ufw" "after_add_rule" >/dev/null 2>&1 || log_warning "Не удалось создать бекап"
     fi
-    
-    log_success "Правило добавлено для порта $port"
 }
 
 # Главное меню Firewall модуля
