@@ -135,12 +135,12 @@ update_toolkit() {
     if [[ -w "/usr/local/bin" ]]; then
         cat > "$cli_main" << EOF
 #!/bin/bash
-exec "$SCRIPT_DIR/main.sh" "$@"
+exec "$SCRIPT_DIR/main.sh" "\$@"
 EOF
         chmod 755 "$cli_main" 2>/dev/null || true
         cat > "$cli_short" << EOF
 #!/bin/bash
-exec "$SCRIPT_DIR/main.sh" "$@"
+exec "$SCRIPT_DIR/main.sh" "\$@"
 EOF
         chmod 755 "$cli_short" 2>/dev/null || true
     fi
@@ -163,13 +163,13 @@ EOF
     if [[ -w "/usr/local/bin" ]]; then
         cat > /usr/local/bin/security-toolkit << EOF
 #!/bin/bash
-exec "$SCRIPT_DIR/main.sh" "$@"
+exec "$SCRIPT_DIR/main.sh" "\$@"
 EOF
         chmod 755 /usr/local/bin/security-toolkit 2>/dev/null || true
         
         cat > /usr/local/bin/sst << EOF
 #!/bin/bash
-exec "$SCRIPT_DIR/main.sh" "$@"
+exec "$SCRIPT_DIR/main.sh" "\$@"
 EOF
         chmod 755 /usr/local/bin/sst 2>/dev/null || true
     fi
@@ -180,7 +180,7 @@ EOF
     log_info "🔄 Скрипт будет автоматически перезапущен через 3 секунды..."
     log_info "💡 Если перезапуск не сработает, запустите: sudo sst"
     sleep 3
-    exec "$SCRIPT_DIR/main.sh"
+    exec "$SCRIPT_DIR/main.sh" "${ORIGINAL_ARGS[@]}"
 }
 
 # Функции логирования
