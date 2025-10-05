@@ -320,7 +320,7 @@ diagnose_fail2ban() {
         jail_status=$(fail2ban-client status 2>/dev/null)
         if [[ -n "$jail_status" ]]; then
             echo "$jail_status" | while IFS= read -r line; do
-                if [[ "$line" =~ "Jail list:" ]]; then
+                if [[ "$line" =~ Jail\ list: ]]; then
                     echo -e "   ${GREEN}$line${NC}"
                 else
                     echo "   $line"
@@ -335,9 +335,9 @@ diagnose_fail2ban() {
             echo
             echo -e "🛡️ ${BLUE}Детали sshd jail:${NC}"
             fail2ban-client status sshd 2>/dev/null | while IFS= read -r line; do
-                if [[ "$line" =~ "Currently banned:" ]]; then
+                if [[ "$line" =~ Currently\ banned: ]]; then
                     echo -e "   ${RED}$line${NC}"
-                elif [[ "$line" =~ "Total banned:" ]]; then
+                elif [[ "$line" =~ Total\ banned: ]]; then
                     echo -e "   ${YELLOW}$line${NC}"
                 else
                     echo "   $line"
@@ -353,9 +353,9 @@ diagnose_fail2ban() {
     echo -e "📋 ${BLUE}Последние ошибки/предупреждения:${NC}"
     echo "════════════════════════════════════════"
     journalctl -u fail2ban --since "1 hour ago" -p warning 2>/dev/null | tail -10 | while IFS= read -r line; do
-        if [[ "$line" =~ "ERROR" ]]; then
+        if [[ "$line" =~ ERROR ]]; then
             echo -e "${RED}$line${NC}"
-        elif [[ "$line" =~ "WARNING" ]]; then
+        elif [[ "$line" =~ WARNING ]]; then
             echo -e "${YELLOW}$line${NC}"
         else
             echo "$line"
@@ -439,7 +439,7 @@ show_security_status() {
         jail_status=$(fail2ban-client status 2>/dev/null)
         if [[ -n "$jail_status" ]]; then
             echo "$jail_status" | while IFS= read -r line; do
-                if [[ "$line" =~ "Jail list:" ]]; then
+                if [[ "$line" =~ Jail\ list: ]]; then
                     echo -e "${GREEN}$line${NC}"
                 else
                     echo "$line"
