@@ -1,14 +1,27 @@
 # Логи и временные файлы
 logs/
 *.log
+
+# Резервные копии
+Backups/
 *.backup.*
+*.bak
 
 # SSH ключи (безопасность)
 keys/id_*
 keys/*.pem
 keys/*.key
 keys/server_security_key*
+*.pub.backup.*
+authorized_keys.backup.*
 
 # Системные файлы
 .DS_Store
 *.tmp
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace

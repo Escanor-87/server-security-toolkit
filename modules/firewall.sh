@@ -231,11 +231,17 @@ delete_firewall_rule() {
         ufw status numbered > "$backup_file" 2>/dev/null || log_warning "Не удалось создать бекап"
         
         # Ротация: оставляем только последние 7 бекапов
-        local old_backups
-        mapfile -t old_backups < <(find "$SCRIPT_DIR/Backups/ufw" -name "before_*.txt" 2>/dev/null | sort -r | tail -n +8)
-        for old_backup in "${old_backups[@]}"; do
-            rm -f "$old_backup" 2>/dev/null
-        done
+        # ИСПРАВЛЕНО: Проверяем результат find перед использованием
+        local old_backups=()
+        if [[ -d "$SCRIPT_DIR/Backups/ufw" ]]; then
+            while IFS= read -r -d '' file; do
+                old_backups+=("$file")
+            done < <(find "$SCRIPT_DIR/Backups/ufw" -name "before_*.txt" -type f -print0 2>/dev/null | sort -zr | tail -zn +8)
+            
+            for old_backup in "${old_backups[@]}"; do
+                [[ -n "$old_backup" ]] && rm -f "$old_backup" 2>/dev/null
+            done
+        fi
         
         # Удаление правила
         log_info "Удаление правила #$rule_input..."

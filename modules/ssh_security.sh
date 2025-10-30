@@ -33,6 +33,7 @@ backup_ssh_config() {
 }
 
 # Автоматическое обновление UFW для SSH порта
+# ИСПРАВЛЕНО: Добавляем новое правило ДО удаления старого (предотвращение race condition)
 update_ufw_ssh_port() {
     local old_port="$1"
     local new_port="$2"
@@ -49,8 +50,21 @@ update_ufw_ssh_port() {
     fi
     
     log_info "Обновление правил UFW..."
-    # Удаляем все существующие SSH правила для старого порта
+    
+    # КРИТИЧЕСКИ ВАЖНО: Сначала добавляем новое правило, затем удаляем старое
+    # Это предотвращает блокировку SSH во время смены порта
     if [[ "$old_port" != "$new_port" ]]; then
+        # Проверяем, не существует ли уже правило для нового порта
+        if ufw status numbered | grep -q "$new_port/tcp"; then
+            log_info "Правило для порта $new_port уже существует"
+        else
+            # Добавляем новое правило ПЕРВЫМ
+            log_info "Добавление правила для нового SSH порта $new_port"
+            ufw allow "$new_port/tcp" comment "SSH"
+            log_success "Новое правило добавлено - SSH доступ через порт $new_port активен"
+        fi
+        
+        # Только после добавления нового правила удаляем старое
         log_info "Поиск и удаление старых SSH правил для порта $old_port"
         
         # Удаляем правила по номеру порта (различные варианты)
@@ -318,6 +332,21 @@ change_ssh_port() {
         if [[ ! "$new_port" =~ ^[0-9]+$ ]] || [[ "$new_port" -lt 1024 ]] || [[ "$new_port" -gt 65535 ]]; then
             log_error "Неверный порт. Используйте порт от 1024 до 65535"
             continue
+        fi
+        
+        # НОВОЕ: Проверка занятости порта (исключая текущий SSH порт)
+        if [[ "$new_port" != "$current_port" ]]; then
+            if ! is_port_available "$new_port"; then
+                log_error "Порт $new_port уже занят другим сервисом"
+                log_info "Используйте другой порт или освободите текущий"
+                # Показываем что занимает порт
+                if command -v ss &>/dev/null; then
+                    echo "Процесс на порту $new_port:"
+                    ss -tlnp | grep ":$new_port " || echo "Детали недоступны"
+                fi
+                echo
+                continue
+            fi
         fi
         
         break

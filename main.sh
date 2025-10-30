@@ -190,6 +190,45 @@ log_config_change() {
     echo "[$timestamp] [CONFIG] $file: $change" >> "$LOG_FILE"
 }
 
+# Единая функция для определения текущего SSH порта
+# Возвращает порт или 22 по умолчанию
+get_ssh_port() {
+    local ssh_config="/etc/ssh/sshd_config"
+    local port
+    
+    # Пытаемся извлечь порт из конфигурации
+    if [[ -f "$ssh_config" ]]; then
+        port=$(grep -E "^[[:space:]]*Port[[:space:]]+[0-9]+" "$ssh_config" | tail -1 | awk '{print $2}')
+    fi
+    
+    # Если порт не найден или некорректен, возвращаем 22
+    if [[ -z "$port" ]] || [[ ! "$port" =~ ^[0-9]+$ ]]; then
+        port="22"
+    fi
+    
+    echo "$port"
+}
+
+# Проверка, занят ли порт (для валидации)
+# Возвращает 0 если порт свободен, 1 если занят
+is_port_available() {
+    local port="$1"
+    
+    # Проверяем через ss (современная утилита)
+    if command -v ss &>/dev/null; then
+        if ss -tuln | grep -q ":${port}[[:space:]]"; then
+            return 1  # Порт занят
+        fi
+    # Fallback на netstat
+    elif command -v netstat &>/dev/null; then
+        if netstat -tuln | grep -q ":${port}[[:space:]]"; then
+            return 1  # Порт занят
+        fi
+    fi
+    
+    return 0  # Порт свободен
+}
+
 # Функция для отображения заголовка
 show_header() {
     clear

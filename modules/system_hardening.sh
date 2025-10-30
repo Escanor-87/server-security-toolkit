@@ -61,10 +61,10 @@ configure_fail2ban_basic() {
         return 1
     fi
     
-    # Получаем текущий SSH порт для конфигурации
+    # Получаем текущий SSH порт для конфигурации (используем единую функцию из main.sh)
     local ssh_port
-    ssh_port=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "ssh")
-    if [[ "$ssh_port" != "22" ]] && [[ "$ssh_port" != "ssh" ]]; then
+    ssh_port=$(get_ssh_port)
+    if [[ "$ssh_port" != "22" ]]; then
         ssh_port="ssh,$ssh_port"
     else
         ssh_port="ssh"
