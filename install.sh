@@ -157,9 +157,13 @@ clone_repository() {
             fi
         fi
     else
-        # Клонируем репозиторий (новая установка)
-        git clone "$REPO_URL" "$INSTALL_DIR"
-        log_success "Репозиторий склонирован в $INSTALL_DIR"
+        # Клонируем репозиторий (новая установка с таймаутом)
+        if timeout 60 git clone "$REPO_URL" "$INSTALL_DIR"; then
+            log_success "Репозиторий склонирован в $INSTALL_DIR"
+        else
+            log_error "Не удалось клонировать репозиторий (проверьте сетевое подключение)"
+            return 1
+        fi
     fi
 }
 
