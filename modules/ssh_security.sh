@@ -324,17 +324,12 @@ change_ssh_port() {
             return 0
         fi
         
-        if [[ -z "$new_port" ]]; then
-            log_warning "Порт не может быть пустым. Попробуйте снова."
+        # Используем единую функцию валидации из main.sh
+        if ! validate_ssh_port "$new_port" 2>/dev/null; then
             continue
         fi
         
-        if [[ ! "$new_port" =~ ^[0-9]+$ ]] || [[ "$new_port" -lt 1024 ]] || [[ "$new_port" -gt 65535 ]]; then
-            log_error "Неверный порт. Используйте порт от 1024 до 65535"
-            continue
-        fi
-        
-        # НОВОЕ: Проверка занятости порта (исключая текущий SSH порт)
+        # Дополнительная проверка занятости порта (исключая текущий SSH порт)
         if [[ "$new_port" != "$current_port" ]]; then
             if ! is_port_available "$new_port"; then
                 log_error "Порт $new_port уже занят другим сервисом"

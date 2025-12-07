@@ -41,29 +41,82 @@ mkdir -p "$LOGS_DIR"
 LOG_FILE="${LOGS_DIR}/security-toolkit.log"
 readonly LOG_FILE
 
+# Конфигурация ротации логов
+readonly MAX_LOG_FILES=3  # Оставляем только последние 3 файла
+readonly MAX_LOG_SIZE=$((5 * 1024 * 1024))  # 5MB вместо 10MB для более частой ротации
+
+# Функция очистки старых логов (оставляет только последние N файлов)
+cleanup_old_logs() {
+    local keep_count="${1:-$MAX_LOG_FILES}"
+    
+    # Получаем список всех лог-файлов (включая текущий и архивные)
+    local all_logs=()
+    while IFS= read -r -d '' log_file; do
+        all_logs+=("$log_file")
+    done < <(find "${LOGS_DIR}" -maxdepth 1 -name "security-toolkit*.log" -type f -print0 2>/dev/null)
+    
+    # Если файлов меньше или равно нужному количеству - ничего не делаем
+    if [[ ${#all_logs[@]} -le $keep_count ]]; then
+        return 0
+    fi
+    
+    # Сортируем по времени модификации (старые первыми)
+    local sorted_logs=()
+    if command -v stat &>/dev/null; then
+        # Используем stat для получения времени модификации
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && sorted_logs+=("$line")
+        done < <(for log in "${all_logs[@]}"; do
+            local mtime
+            mtime=$(stat -f '%m %N' "$log" 2>/dev/null || stat -c '%Y %n' "$log" 2>/dev/null)
+            echo "$mtime"
+        done | sort -n | cut -d' ' -f2-)
+    else
+        # Fallback: сортируем по имени (timestamp в имени файла)
+        mapfile -t sorted_logs < <(printf '%s\n' "${all_logs[@]}" | sort)
+    fi
+    
+    # Удаляем старые файлы (оставляем только последние keep_count)
+    local to_delete=$((${#sorted_logs[@]} - keep_count))
+    if [[ $to_delete -gt 0 ]]; then
+        local deleted=0
+        for ((i=0; i<to_delete; i++)); do
+            local old_file="${sorted_logs[i]}"
+            if [[ -f "$old_file" ]] && [[ "$old_file" != "$LOG_FILE" ]]; then
+                rm -f "$old_file" 2>/dev/null && ((deleted++))
+            fi
+        done
+        if [[ $deleted -gt 0 ]]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Удалено старых логов: $deleted" >> "$LOG_FILE" 2>/dev/null || true
+        fi
+    fi
+}
+
 # Функция ротации логов
 rotate_logs() {
-    # Проверяем размер файла логов (10MB)
-    local max_size=$((10 * 1024 * 1024))
-    if [[ -f "$LOG_FILE" && $(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null) -gt $max_size ]]; then
-        local timestamp
-        timestamp=$(date '+%Y%m%d_%H%M%S')
-        local backup_file="${LOGS_DIR}/security-toolkit-${timestamp}.log"
+    # Проверяем размер файла логов
+    if [[ -f "$LOG_FILE" ]]; then
+        local file_size
+        file_size=$(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null || echo "0")
         
-        mv "$LOG_FILE" "$backup_file" 2>/dev/null
-        log_info "Лог файл был ротирован: $backup_file"
-        
-        # Оставляем только последние 10 файлов
-        local log_files
-        # Используем find вместо ls для безопасной обработки файлов
-        mapfile -t log_files < <(find "${LOGS_DIR}" -maxdepth 1 -name "security-toolkit-*.log" -type f -print0 2>/dev/null | \
-            xargs -0 -I{} stat -f '%m %N' {} 2>/dev/null | sort -rn | tail -n +11 | cut -d' ' -f2- || \
-            find "${LOGS_DIR}" -maxdepth 1 -name "security-toolkit-*.log" -type f -print0 2>/dev/null | \
-            xargs -0 -I{} stat -c '%Y %n' {} 2>/dev/null | sort -rn | tail -n +11 | cut -d' ' -f2-)
-        for old_file in "${log_files[@]}"; do
-            [[ -n "$old_file" ]] && rm -f "$old_file"
-        done
+        if [[ $file_size -gt $MAX_LOG_SIZE ]]; then
+            local timestamp
+            timestamp=$(date '+%Y%m%d_%H%M%S')
+            local backup_file="${LOGS_DIR}/security-toolkit-${timestamp}.log"
+            
+            # Перемещаем текущий лог в архив
+            mv "$LOG_FILE" "$backup_file" 2>/dev/null || true
+            
+            # Логируем ротацию (в новый файл, так как старый перемещен)
+            {
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Лог файл был ротирован: $(basename "$backup_file")"
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Размер предыдущего лога: $((file_size / 1024 / 1024))MB"
+            } >> "$LOG_FILE" 2>/dev/null || true
+        fi
     fi
+    
+    # Всегда очищаем старые логи (оставляем только последние MAX_LOG_FILES)
+    cleanup_old_logs "$MAX_LOG_FILES"
 }
 
 # Устанавливаем ловушки для диагностики неожиданных выходов
@@ -112,29 +165,62 @@ run_action() {
     return 0
 }
 
-# Функции логирования
+# Функция санитизации логов (удаление чувствительных данных)
+# ИСПРАВЛЕНО: Фильтрация чувствительных данных
+sanitize_log() {
+    local text="$1"
+    
+    # Удаляем SSH приватные ключи
+    text=$(echo "$text" | sed 's/-----BEGIN.*PRIVATE KEY-----.*-----END.*PRIVATE KEY-----/[REDACTED_PRIVATE_KEY]/g')
+    
+    # Удаляем SSH публичные ключи (частично, оставляем только тип и fingerprint)
+    text=$(echo "$text" | sed 's/ssh-[a-z0-9-]\+ [A-Za-z0-9+\/=]\{100,\}/[REDACTED_PUBLIC_KEY]/g')
+    
+    # Удаляем пароли в различных форматах
+    text=$(echo "$text" | sed 's/password[=:][^[:space:]]*/password=[REDACTED]/gi')
+    text=$(echo "$text" | sed 's/PASSWORD[=:][^[:space:]]*/PASSWORD=[REDACTED]/g')
+    text=$(echo "$text" | sed 's/--password[= ][^[:space:]]*/--password=[REDACTED]/gi')
+    
+    # Удаляем токены и API ключи
+    text=$(echo "$text" | sed 's/\(api[_-]key\|token\|secret\)[=:][^[:space:]]*/\1=[REDACTED]/gi')
+    
+    # Удаляем длинные строки, похожие на ключи (более 50 символов без пробелов)
+    text=$(echo "$text" | sed 's/[A-Za-z0-9+\/=]\{50,\}/[REDACTED_LONG_STRING]/g')
+    
+    echo "$text"
+}
+
+# Функции логирования с санитизацией
 log_info() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo -e "${BLUE}[$timestamp] [INFO]${NC} $1" | tee -a "$LOG_FILE"
+    local sanitized_msg
+    sanitized_msg=$(sanitize_log "$1")
+    echo -e "${BLUE}[$timestamp] [INFO]${NC} $sanitized_msg" | tee -a "$LOG_FILE"
 }
 
 log_success() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo -e "${GREEN}[$timestamp] [SUCCESS]${NC} $1" | tee -a "$LOG_FILE"
+    local sanitized_msg
+    sanitized_msg=$(sanitize_log "$1")
+    echo -e "${GREEN}[$timestamp] [SUCCESS]${NC} $sanitized_msg" | tee -a "$LOG_FILE"
 }
 
 log_warning() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo -e "${YELLOW}[$timestamp] [WARNING]${NC} $1" | tee -a "$LOG_FILE"
+    local sanitized_msg
+    sanitized_msg=$(sanitize_log "$1")
+    echo -e "${YELLOW}[$timestamp] [WARNING]${NC} $sanitized_msg" | tee -a "$LOG_FILE"
 }
 
 log_error() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo -e "${RED}[$timestamp] [ERROR]${NC} $1" | tee -a "$LOG_FILE"
+    local sanitized_msg
+    sanitized_msg=$(sanitize_log "$1")
+    echo -e "${RED}[$timestamp] [ERROR]${NC} $sanitized_msg" | tee -a "$LOG_FILE"
 }
 
 # Простой прогресс-индикатор
@@ -150,18 +236,26 @@ show_progress() {
 }
 
 # Запуск команды с расширенным логированием: команда, код выхода, STDOUT/STDERR
+# ИСПРАВЛЕНО: Безопасная работа с временными файлами
 exec_logged() {
     local desc="$1"; shift
     local timestamp cmd_str rc stdout_file stderr_file
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     cmd_str="$*"
-    stdout_file=$(mktemp)
-    stderr_file=$(mktemp)
+    
+    # Создаем временные файлы с безопасным шаблоном
+    stdout_file=$(mktemp "${TMPDIR:-/tmp}/sst-stdout-XXXXXX" 2>/dev/null || mktemp /tmp/sst-stdout-XXXXXX)
+    stderr_file=$(mktemp "${TMPDIR:-/tmp}/sst-stderr-XXXXXX" 2>/dev/null || mktemp /tmp/sst-stderr-XXXXXX)
+    
+    # Устанавливаем trap для гарантированной очистки
+    trap "rm -f '$stdout_file' '$stderr_file'" EXIT INT TERM
+    
     # Не даём set -e оборвать выполнение внутри
     set +e
     "$@" >"$stdout_file" 2>"$stderr_file"
     rc=$?
     set -e
+    
     {
         echo "[$timestamp] [COMMAND] $desc"
         echo "  cwd: $(pwd)"
@@ -177,7 +271,11 @@ exec_logged() {
         fi
         echo "  ---------------"
     } >> "$LOG_FILE"
+    
+    # Удаляем временные файлы и снимаем trap
     rm -f "$stdout_file" "$stderr_file"
+    trap - EXIT INT TERM
+    
     return $rc
 }
 
@@ -207,6 +305,44 @@ get_ssh_port() {
     fi
     
     echo "$port"
+}
+
+# Валидация SSH порта
+# ИСПРАВЛЕНО: Добавлена валидация портов
+validate_ssh_port() {
+    local port="$1"
+    
+    # Проверка на пустое значение
+    if [[ -z "$port" ]]; then
+        log_error "Порт не может быть пустым"
+        return 1
+    fi
+    
+    # Проверка на числовое значение
+    if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+        log_error "Порт должен быть числом: $port"
+        return 1
+    fi
+    
+    # Проверка диапазона
+    if [[ $port -lt 1 ]] || [[ $port -gt 65535 ]]; then
+        log_error "Порт должен быть в диапазоне 1-65535: $port"
+        return 1
+    fi
+    
+    # Проверка на привилегированные порты (для не-root пользователей)
+    if [[ $port -lt 1024 ]] && [[ $EUID -ne 0 ]]; then
+        log_error "Порты < 1024 требуют root прав. Текущий порт: $port"
+        return 1
+    fi
+    
+    # Проверка на занятость порта
+    if ! is_port_available "$port"; then
+        log_warning "Порт $port уже занят, но это может быть нормально для SSH"
+        # Не возвращаем ошибку, так как SSH может уже слушать этот порт
+    fi
+    
+    return 0
 }
 
 # Проверка, занят ли порт (для валидации)
@@ -321,7 +457,26 @@ load_modules() {
     log_info "Загрузка модулей из $MODULES_DIR"
     local loaded_count=0
     
+    # Сначала загружаем utils.sh, если он существует
+    local utils_module="${MODULES_DIR}/utils.sh"
+    if [[ -f "$utils_module" ]]; then
+        log_info "Загружаем модуль: utils.sh"
+        # shellcheck source=/dev/null
+        if source "$utils_module"; then
+            log_success "Модуль utils.sh загружен успешно"
+            ((loaded_count++))
+        else
+            log_warning "Не удалось загрузить utils.sh (продолжаем без него)"
+        fi
+    fi
+    
+    # Затем загружаем остальные модули
     for module in "${MODULES_DIR}"/*.sh; do
+        # Пропускаем utils.sh, так как он уже загружен
+        if [[ "$(basename "$module")" == "utils.sh" ]]; then
+            continue
+        fi
+        
         if [[ -f "$module" ]]; then
             local module_name
             module_name=$(basename "$module")
@@ -1569,6 +1724,9 @@ update_toolkit() {
 
 # Главная функция
 main() {
+    # Очищаем старые логи при запуске (оставляем только последние MAX_LOG_FILES)
+    cleanup_old_logs "$MAX_LOG_FILES" >/dev/null 2>&1
+    
     # Ротируем логи при запуске (тихо)
     rotate_logs >/dev/null 2>&1
     
